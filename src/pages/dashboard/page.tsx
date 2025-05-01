@@ -5,17 +5,41 @@ import { FaPlus, FaCheck } from "react-icons/fa";
 
 const DashboardPage = () => {
     const [isModal, setIsModal] = useState(false)
-    const [isChecked, setIsChecked] = useState(false)
+    const [checkedDays, setCheckedDays] = useState({
+        Mon: false,
+        Tues: false,
+        Wed: false,
+        Thurs: false,
+        Fri: false,
+        Sat: false,
+        Sun: false,
+      });
+      
 
     const addItem = () => {
         setIsModal(!isModal)
     }
 
-    const checkHabit = () => {
-        setIsChecked(!isChecked)
+    const checkHabit = (day: string) => {
+        setCheckedDays(prev => ({
+          ...prev,
+          [day]: !prev[day]
+        }));
+      };    
 
+    const habitDays = [
+        'Habit',
+        'Mon',
+        'Tues',
+        'Wed',
+        'Thurs',
+        'Fri',
+        'Sat',
+        'Sun',
+    ]
 
-    }
+    const filteredDays = habitDays.filter((day) => day != 'Habit')
+    
 
   return (
     <div className='bg-gray-100 h-screen'>
@@ -28,59 +52,38 @@ const DashboardPage = () => {
             /></button>
         </header>
         <main>
-            <section className='flex flex-col justify-between mt-20 mx-5 h-auto border border-black'>
+            <section className='flex flex-col justify-between mt-20 mx-5 h-auto'>
                 <div className='grid grid-cols-8 pb-10 text-xl gap-5 text-center'>
-                    <div className="h-auto w-auto">Habit</div>
-
-                    <div className="h-auto w-auto">Mon</div>
-                    <div className="h-auto w-auto">Tues</div>
-                    <div className="h-auto w-auto">Wed</div>
-                    <div className="h-auto w-auto">Thurs</div>
-                    <div className="h-auto w-auto">Fri</div>
-                    <div className="h-auto w-auto">Sat</div>
-                    <div className="h-auto w-auto">Sun</div>
-
+                    {habitDays.map((day) => (
+                        <div key={day} className="h-auto w-auto">
+                            {day}
+                        </div>
+                    ))}
                 </div>
 
-                <div className="grid grid-cols-8 gap-5 ">
-                <div className="flex justify-center items-center border border-black bg-white h-auto w-auto ">Meditation</div>
+                <div className="grid grid-cols-8 gap-5">
 
-                    <div 
-                    onClick={checkHabit}
-                    className="flex justify-center items-center border border-black bg-white h-auto w-auto">
-                    {
-                        isChecked ? 
-                        <span className='flex h-24 w-24 rounded-[50%] justify-center items-center bg-green-200 border border-green-500 text-green-500'>
-                                    <span>
-                                        <FaCheck size={50}/>
-                                    </span>
-                                </span>
-                        : <span 
-                        className='flex border h-24 w-24 rounded-[50%] justify-center items-center bg-gray-200 text-white hover:cursor-pointer'></span>
-                    }
-                        
-                    </div>
+                    <div className="flex justify-center items-center border border-black bg-white h-auto w-auto ">Meditation</div>
+                   
+                    {filteredDays.map((day: string) => (
+                        <div className="flex justify-center items-center border border-black bg-white h-auto w-auto">
+                            <span 
+                            onClick={() => checkHabit(day)}
 
-                    <div className="flex justify-center items-center border border-black bg-white h-auto w-auto">
-                        <span className='flex border h-24 w-24 rounded-[50%] justify-center items-center bg-gray-200 text-white'></span>
-                    </div>
-                    
-                    <div className="flex justify-center items-center border border-black bg-white h-auto w-auto">
-                        <span className='flex border h-24 w-24 rounded-[50%] justify-center items-center bg-gray-200 text-white'></span>
-                    </div>
-                    <div className="flex justify-center items-center border border-black bg-white h-auto w-auto">
-                        <span className='flex border h-24 w-24 rounded-[50%] justify-center items-center bg-gray-200 text-white'></span>
-                    </div>
-                    <div className="flex justify-center items-center border border-black bg-white h-auto w-auto">
-                        <span className='flex border h-24 w-24 rounded-[50%] justify-center items-center bg-gray-200 text-white'></span>
-                    </div>
-                    <div className="flex justify-center items-center border border-black bg-white h-auto w-auto">
-                        <span className='flex border h-24 w-24 rounded-[50%] justify-center items-center bg-gray-200 text-white'></span>
-                    </div>
-                    <div className="flex justify-center items-center border border-black bg-white h-auto w-auto">
-                        <span className='flex border h-24 w-24 rounded-[50%] justify-center items-center bg-gray-200 text-white'></span>
-                    </div>
-                    
+                            className='flex border h-24 w-24 rounded-[50%] justify-center items-center bg-gray-200 text-white'>
+                            {
+                                checkedDays[day] ? 
+                                <span className='flex h-24 w-24 rounded-[50%] justify-center items-center bg-green-200 border border-green-500 text-green-500'>
+                                            <span>
+                                                <FaCheck size={50}/>
+                                            </span>
+                                        </span>
+                                : <span 
+                                className='flex border h-24 w-24 rounded-[50%] justify-center items-center bg-gray-200 text-white hover:cursor-pointer'></span>
+                            }
+                            </span>
+                        </div>
+                    ))}
 
                 </div>
 
@@ -96,7 +99,7 @@ const DashboardPage = () => {
 
             {
                 isModal ? 
-                <div className="border border-black bg-white mx-96 px-10">
+                <div className="border border-black bg-white mx-96 p-10 h-48">
                     <h1 className="font-semibold mb-3">Habit Name</h1>
                     <input
                         type="text"
@@ -106,13 +109,11 @@ const DashboardPage = () => {
                 </div> 
                 : 
                 null
-            }
-
-            
+            }            
         </main>
       
     </div>
   )
 }
 
-export default DashboardPage
+export default DashboardPage;
