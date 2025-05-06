@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { FaPlus, FaCheck } from "react-icons/fa";
 import { DateTime } from 'luxon';
+import HabitCard from '../../components/HabitCard'
+import { Habit, HabitDay } from "../../utils/utils";
 
 
 const DashboardPage = () => {
@@ -31,15 +33,13 @@ const DashboardPage = () => {
 
     const filteredDays = habitDays.filter((day) => day != 'Habit')
 
-    const [trackHabit, setTrackHabit] = useState<
-    { 
-        name: string; 
-        days: string[]; 
-        completions: { [date: string]: Boolean};
-        category: string; 
-    }[]
-    >([]);
-      
+    const [scheduledHabits, setScheduledHabits] = useState<Record<string, HabitDay>>({})
+
+    const today = DateTime.now().setZone('America/Chicago');
+    const todaysDay = today.toFormat('ccc')
+    const todaysDate = today.toFormat('yyyy-LL-dd')
+
+    const [selectedDate, setSelectedDate] = useState(todaysDate)
 
     const addItem = () => {
         setIsModal(!isModal)
@@ -52,9 +52,12 @@ const DashboardPage = () => {
         }));
       };    
 
+    const selectedDayOfWeek = DateTime.fromISO(selectedDate).toFormat('ccc')
+
     const addHabit = () => {
         const selectedDays = filteredDays.filter((day) => checkedDays[day])
-        const newHabit = {
+
+        const newHabit: Habit = {
           name: habit,
           days: selectedDays,
           completions: {},
@@ -66,10 +69,35 @@ const DashboardPage = () => {
         if (category === '') return window.alert('Please select a category')
 
         // logic to check if habit exists or not
-        const isDuplicate = trackHabit.some((habit) => newHabit.name.toLowerCase() == habit.name.toLowerCase())
+        const isDuplicate = scheduledHabits[selectedDate]?.habits.some(
+            (habit) => newHabit.name.toLowerCase() == habit.name.toLowerCase()
+        ) ?? false;
         if (isDuplicate) return window.alert('Must have unique names')
       
-        setTrackHabit((prev) => [...prev, newHabit]);
+        setScheduledHabits((prev) => {
+            const updated = {...prev}
+
+            
+
+            if (!selectedDays.includes(selectedDayOfWeek)) {
+                return prev
+            }
+
+            if (!updated[selectedDate]) {
+                updated[selectedDate] = {
+                    dayOfWeek: todaysDay,
+                    week: today.weekNumber,
+                    habits: [],
+                };
+            }
+
+            updated[selectedDate] = {
+                ...updated[selectedDate],
+                habits: [...updated[selectedDate].habits, newHabit]
+            }
+
+            return updated
+        }),
 
         // reset everything
         setHabit(""); 
@@ -82,47 +110,54 @@ const DashboardPage = () => {
             Sat: false,
             Sun: false,
         })
-        setIsModal(false);     
+        setCategory("")
+        setIsModal(false); 
     };
- 
-    const dailyFreq = () => {setCheckedDays({
-        Mon: true,
-        Tue: true,
-        Wed: true,
-        Thu: true,
-        Fri: true,
-        Sat: true,
-        Sun: true,
-    })}
 
-    const today = DateTime.now().setZone('America/Chicago');
-    const todaysDay = today.toFormat('ccc')
-    const todaysDate = today.toFormat('yyyy-LL-dd')
 
-    const completedCount = trackHabit.filter(habit => 
-        habit.days.includes(todaysDay) && 
-        habit.completions?.[todaysDate] === true
-    ).length;
+
+    const completedCount = scheduledHabits[selectedDate]?.habits.filter(
+        (habit) => 
+            habit.days.includes(selectedDate) &&
+            !!habit.completions?.[selectedDate]
+    ).length || 0;
 
 
     const markHabitComplete = (index: number) => {
-        setTrackHabit(prev => {
-            const updated = [...prev]
-            const oldHabit = updated[index]
-            const current = oldHabit.completions[todaysDate] || false;
+        setScheduledHabits((prev) => {
+            const dateHabits = prev[selectedDate]
+            if (!dateHabits) return prev
+            
+            const updatedHabits = [...dateHabits.habits]
+            const oldHabit = updatedHabits[index]
+
+            if (!oldHabit.days.includes(selectedDayOfWeek)) return prev
+            
+            const current = !!oldHabit.completions[selectedDate];            
 
             const updatedHabit = {
                 ...oldHabit,
                 completions: {
                     ...oldHabit.completions,
-                    [todaysDate]: !current
-                }
-              };
+                    [selectedDate]: !current
+                },
+            };
+
+            updatedHabits[index] = updatedHabit
               
-            updated[index] = updatedHabit
-            return updated
+            return {
+                ...prev,
+                [selectedDate]: {
+                    ...dateHabits,
+                    habits: updatedHabits,
+                }
+            }
         })
     }
+
+    const weekNumber = [1, 2, 3, 4]
+
+      
     
   return (
     <div className='flex flex-col bg-gray-100 min-h-screen'>
@@ -137,7 +172,7 @@ const DashboardPage = () => {
                     </div>
 
                     <div>
-                        <p>{completedCount} / {trackHabit.length}</p>
+                        <p>{completedCount} / {scheduledHabits[selectedDate]?.habits.length || 0}</p>
                         <p>Habits completed</p>
                     </div>
                 </section>
@@ -156,10 +191,13 @@ const DashboardPage = () => {
                     </button>
                 </div>
 
-                {trackHabit.length == 0 ? (
+                {/* Habit card */}
+                {!scheduledHabits[selectedDate] || scheduledHabits[selectedDate].habits.length === 0 ? (
                     <div className="text-center text-gray-500">No habits have been added yet</div> 
                     ) : (
-                        trackHabit.map((habit, index) => (
+                        scheduledHabits[selectedDate]?.habits
+                        .filter((habit) => habit.days.includes(selectedDayOfWeek))
+                        .map((habit, index) => (
                             <div key={`${habit.name}-${index}`}
                             className="flex flex-row-reverse justify-end items-center mb-3 border border-gray-400 rounded-lg p-5 mt-5 w-full">
                                 <div className="">
@@ -171,7 +209,7 @@ const DashboardPage = () => {
                                     </div>
                                 </div>
                                 <div onClick={() => markHabitComplete(index)}>
-                                    {habit.completions[todaysDate] ? (
+                                    {habit.completions[selectedDate] ? (
                                     <span 
                                         className='flex h-16 w-16 rounded-[50%] justify-center items-center bg-green-200 border border-green-500 text-green-500 mr-5 hover:cursor-pointer'>
                                         <span>
@@ -189,7 +227,7 @@ const DashboardPage = () => {
                     ))
                 }
 
-                
+            {/*Modal Card */}
             </section>
             {isModal ? 
                 <div className="flex flex-col fixed justify-center inset-0 align-middle bg-black bg-opacity-80 z-100">
@@ -226,7 +264,6 @@ const DashboardPage = () => {
                             <h1 className="font-semibold mt-4 mb-2">Frequency</h1>
                             <div className="flex gap-5">
                                 <button 
-                                onClick={dailyFreq}
                                 className="border border-gray-300 px-5 py-2 rounded-full  hover:cursor-pointer bg-purple-600 text-white" 
                                     >Daily
                                 </button>
@@ -272,7 +309,6 @@ const DashboardPage = () => {
                 null
             }            
         </main>
-      
     </div>
   )
 }
