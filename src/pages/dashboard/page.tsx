@@ -1,20 +1,22 @@
 
 import { useState } from "react";
 import { FaPlus, FaCheck } from "react-icons/fa";
+import { DateTime } from 'luxon';
 
 
 const DashboardPage = () => {
     const [isModal, setIsModal] = useState(false)
     const [checkedDays, setCheckedDays] = useState({
         Mon: false,
-        Tues: false,
+        Tue: false,
         Wed: false,
-        Thurs: false,
+        Thu: false,
         Fri: false,
         Sat: false,
         Sun: false,
       });
     const [habit, setHabit] = useState("")
+    const [category, setCategory] = useState('')
 
     const habitDays = [
         'Habit',
@@ -30,7 +32,12 @@ const DashboardPage = () => {
     const filteredDays = habitDays.filter((day) => day != 'Habit')
 
     const [trackHabit, setTrackHabit] = useState<
-    { name: string; days: string[] }[]
+    { 
+        name: string; 
+        days: string[]; 
+        completions: { [date: string]: Boolean};
+        category: string; 
+    }[]
     >([]);
       
 
@@ -45,17 +52,18 @@ const DashboardPage = () => {
         }));
       };    
 
-
-
     const addHabit = () => {
+        const selectedDays = filteredDays.filter((day) => checkedDays[day])
         const newHabit = {
           name: habit,
-          days: filteredDays.filter((day) => checkedDays[day])
+          days: selectedDays,
+          completions: {},
+          category: category
         };
 
-        const selectedDay = filteredDays.filter((day) => checkedDays[day])
-
-        if (!habit || selectedDay.length == 0) return window.alert('Cannot leave empty')
+        if (!habit || selectedDays.length == 0) return window.alert('Please complete all fields')
+        
+        if (category === '') return window.alert('Please select a category')
 
         // logic to check if habit exists or not
         const isDuplicate = trackHabit.some((habit) => newHabit.name.toLowerCase() == habit.name.toLowerCase())
@@ -67,85 +75,125 @@ const DashboardPage = () => {
         setHabit(""); 
         setCheckedDays({
             Mon: false,
-            Tues: false,
+            Tue: false,
             Wed: false,
-            Thurs: false,
+            Thu: false,
             Fri: false,
             Sat: false,
             Sun: false,
         })
-        setIsModal(false);         
-      };
-    
+        setIsModal(false);     
+    };
+ 
+    const dailyFreq = () => {setCheckedDays({
+        Mon: true,
+        Tue: true,
+        Wed: true,
+        Thu: true,
+        Fri: true,
+        Sat: true,
+        Sun: true,
+    })}
 
+    const today = DateTime.now().setZone('America/Chicago');
+    const todaysDay = today.toFormat('ccc')
+    const todaysDate = today.toFormat('yyyy-LL-dd')
+
+    const completedCount = trackHabit.filter(habit => 
+        habit.days.includes(todaysDay) && 
+        habit.completions?.[todaysDate] === true
+    ).length;
+
+
+    const markHabitComplete = (index: number) => {
+        setTrackHabit(prev => {
+            const updated = [...prev]
+            const oldHabit = updated[index]
+            const current = oldHabit.completions[todaysDate] || false;
+
+            const updatedHabit = {
+                ...oldHabit,
+                completions: {
+                    ...oldHabit.completions,
+                    [todaysDate]: !current
+                }
+              };
+              
+            updated[index] = updatedHabit
+            return updated
+        })
+    }
+    
   return (
-    <div className='bg-gray-100 min-h-screen'>
-        <header className='flex flex-row justify-between p-5 w-full text-center bg-blue-300'>
-            <h1 className='text-2xl font-semibold'>HabitTracker Dashboard</h1>
-            <button 
-                onClick={addItem}
-                className='border bg-gray-200 px-5 py-3 rounded-lg cursor-pointer hover:bg-gray-300'>
-                <FaPlus/>
-            </button>
+    <div className='flex flex-col bg-gray-100 min-h-screen'>
+        <header className='flex flex-row justify-between items-center p-5 text-center bg-white m-5 rounded-2xl'>
+            <h1 className='text-2xl font-semibold'>Your Dashboard</h1>
+            <p className="text-gray-500 text-lg">{todaysDate}</p>
         </header>
         <main>
-            <section className='flex flex-col justify-between mt-20 mx-5 h-auto'>
-                <div className='grid grid-cols-8 pb-10 text-xl gap-5 text-center'>
-                    {habitDays.map((day) => (
-                        <div key={day} className="h-auto w-auto">
-                            {day}
-                        </div>
-                    ))}
+            <section className='flex flex-col justify-between m-auto my-5 h-auto border w-1/2 bg-white rounded-2xl p-10'>
+                    <div>
+                        <h1 className="text-3xl font-semibold">Today's Progress</h1>
+                    </div>
+
+                    <div>
+                        <p>{completedCount} / {trackHabit.length}</p>
+                        <p>Habits completed</p>
+                    </div>
+                </section>
+
+            <section className='flex flex-col justify-between m-auto items-center h-auto border w-1/2 bg-white rounded-2xl p-10'>
+                <div className='text-xl gap-5 text-center flex items-center justify-between w-full'>
+                    <h1 className="text-3xl font-semibold">My Habits</h1>
+
+                    <button 
+                    onClick={addItem}
+                    className='flex border border-none bg-purple-600 items-center px-5 py-3 rounded-full'>
+                        <span className='flex  items-center  text-white'>
+                            <FaPlus size={15}/>
+                        </span>
+                        <h1 className="text-xl font-semibold pl-2 text-white">Add</h1>
+                    </button>
                 </div>
 
                 {trackHabit.length == 0 ? (
-                    <div className="text-center">No habits have been added yet</div> 
+                    <div className="text-center text-gray-500">No habits have been added yet</div> 
                     ) : (
-                        trackHabit.map((habit) => (
-                            <div key={habit.name}
-                            className="mb-3">
-                                <div className="grid grid-cols-8 gap-5">
-                                    <div className="flex justify-center items-center bg-white h-auto w-auto flex-wrap">{habit.name}</div>
-
-                                    {filteredDays.map((day: string) => (
-                                        <div className="flex justify-center items-center border border-black bg-white h-auto w-auto gap-3">
-                                            <span 
-                                            onClick={() => checkHabit(day)}
-
-                                            className='flex border h-24 w-24 rounded-[50%] justify-center items-center bg-gray-200 text-white'>
-                                            {
-                                               habit.days.includes(day) ? 
-                                                <span className='flex h-24 w-24 rounded-[50%] justify-center items-center bg-green-200 border border-green-500 text-green-500'>
-                                                    <span>
-                                                        <FaCheck size={50}/>
-                                                    </span>
-                                                </span>
-                                                : <span 
-                                                className='flex border h-24 w-24 rounded-[50%] justify-center items-center bg-gray-200 text-white hover:cursor-pointer'>
-                                                </span>
-                                            }
-                                            </span>
+                        trackHabit.map((habit, index) => (
+                            <div key={`${habit.name}-${index}`}
+                            className="flex flex-row-reverse justify-end items-center mb-3 border border-gray-400 rounded-lg p-5 mt-5 w-full">
+                                <div className="">
+                                    <div className="text-left"> 
+                                        <div className="flex text-2xl font-semibold bg-white h-auto w-auto flex-wrap">{habit.name}</div>
+                                        <div>
+                                            <p className="text-gray-500">{habit.category} | {'Daily'}</p>
                                         </div>
-                                    ))}
                                     </div>
                                 </div>
+                                <div onClick={() => markHabitComplete(index)}>
+                                    {habit.completions[todaysDate] ? (
+                                    <span 
+                                        className='flex h-16 w-16 rounded-[50%] justify-center items-center bg-green-200 border border-green-500 text-green-500 mr-5 hover:cursor-pointer'>
+                                        <span>
+                                            <FaCheck size={30}/>
+                                        </span>
+                                    </span>
+                                    ) : (
+                                    <span 
+                                        className='flex h-16 w-16 rounded-[50%] justify-center items-center border border-gray-400 mr-5 hover:cursor-pointer'>
+                                    </span>
+                                    )}
+                                </div>
+                            </div>
                         )
                     ))
                 }
 
-                <div className='flex border border-dashed border-black px-20 my-5 py-10 items-center'>
-                    <span className='flex border h-10 w-10 rounded-[50%] justify-center items-center bg-gray-400 text-white'>
-                        <FaPlus size={20}/>
-                    </span>
-                    <h1 className="text-xl font-semibold pl-3">Add New Habit</h1>
-                </div>
+                
             </section>
-
-            <section></section>
-
             {isModal ? 
                 <div className="flex flex-col fixed justify-center inset-0 align-middle bg-black bg-opacity-80 z-100">
-                    <div className="bg-white w-96 m-auto rounded-lg">
+                    <div className="bg-white w-[30rem] m-auto rounded-lg">
                         <header className="w-full py-5 text-center bg-purple-600 text-white font-semibold rounded-t-lg">
                             <h1 className="text-3xl ">Create New Habit</h1>
                         </header>
@@ -158,30 +206,42 @@ const DashboardPage = () => {
                                 className="border bg-gray-100 py-2 w-full pl-4 rounded-md"
                                 value={habit}
                                 onChange={(e) => setHabit(e.target.value)}
+                                required
                             />
 
                             <h1 className="font-semibold mt-4 mb-2">Category</h1>
-
-                                <select
+                            <select
+                                value={category}
+                                onChange={(e) => setCategory(e.target.value)}
                                 className="border bg-gray-100 py-2 w-full pl-4 rounded-md"
-                                >
-                                    <option>Fitness</option>
-                                    <option>Other</option>
-                                    <option>Penis</option>
-                                    <option>Penis</option>
-                                    <option>Penis</option>
-                                </select>
+                                required
+                            >
+                                <option value='' disabled hidden>Select category</option>
+                                <option value='Fitness'>Fitness</option>
+                                <option value='Career'>Career</option>
+                                <option value='Spiritual'>Spiritual</option>
+                                <option value='Other'>Other</option>
+                            </select>
 
+                            <h1 className="font-semibold mt-4 mb-2">Frequency</h1>
+                            <div className="flex gap-5">
+                                <button 
+                                onClick={dailyFreq}
+                                className="border border-gray-300 px-5 py-2 rounded-full  hover:cursor-pointer bg-purple-600 text-white" 
+                                    >Daily
+                                </button>
+                                <button className="border border-gray-300 px-5 py-2 rounded-full  hover:cursor-pointer ">Custom</button>
+                            </div>
                             
-
-                            <div className="flex flex-row justify-normal gap-3 flex-wrap my-6">
+                            {/* Days it will appear on calendar for that week */}
+                            <div className="flex flex-row justify-center gap-3 flex-wrap my-6">
                             {filteredDays.map((day) => (
                                 <button
                                     key={day}
                                     onClick={() => checkHabit(day)}
                                     className={`p-2 rounded ${
                                     checkedDays[day]
-                                        ? "bg-green-300 text-white"
+                                        ? "bg-purple-600 text-white"
                                         : "bg-gray-200"
                                     }`}
                                 >
@@ -194,13 +254,13 @@ const DashboardPage = () => {
                                 <button 
                                 type="submit"
                                 onClick={addHabit}
-                                className=" bg-green-500 border border-none px-5 py-2 rounded-md  hover:cursor-pointer text-white hover:bg-green-400">
+                                className=" bg-purple-600 border border-none px-5 py-2 rounded-md  hover:cursor-pointer text-white hover:bg-opacity-80">
                                     Submit
                                 </button>
 
                                 <button 
                                 onClick={() => setIsModal(false)}
-                                className=" bg-white border border-red-300 px-5 py-2 rounded-md hover:cursor-pointer text-red-500 hover:border-red-400">
+                                className=" bg-white border border-gray-700 px-5 py-2 rounded-md hover:cursor-pointer text-gray-700 hover:border-purple-600">
                                     Cancel
                                 </button>
                             </div>
