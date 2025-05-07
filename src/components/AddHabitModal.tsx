@@ -1,4 +1,7 @@
-import React from 'react'
+import { DateTime } from 'luxon';
+import React, { useState } from 'react';
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 
 type AddHabitModalProps = {
   isModal: boolean;
@@ -11,97 +14,148 @@ type AddHabitModalProps = {
   checkHabit: (day: string) => void;
   addHabit: () => void;
   setIsModal: (val: boolean) => void;
-  onSetDaily: ()=> void;
-}
+  onSetDaily: () => void;
+  selectedDate: string;
+  onDateChange: (val: string) => void;
+};
 
-const AddHabitModal:React.FC<AddHabitModalProps> = ({isModal, habit, category, filteredDays, checkedDays, setHabit, setCategory, checkHabit, addHabit, setIsModal, onSetDaily}) => {
-    if (!isModal) return null;
+const AddHabitModal: React.FC<AddHabitModalProps> = ({
+  isModal,
+  habit,
+  category,
+  onDateChange,
+  setHabit,
+  setCategory,
+  addHabit,
+  setIsModal,
+  onSetDaily,
+  selectedDate,
+  filteredDays,
+  checkedDays,
+  checkHabit
+}) => {
+    
+  const [frequencyMode, setFrequencyMode] = useState<"daily" | "custom">("daily");
 
-    return (
-        <div>
-            <main>
-                {isModal ? 
-                    <div className="flex flex-col fixed justify-center inset-0 align-middle bg-black bg-opacity-80 z-100">
-                        <div className="bg-white w-[30rem] m-auto rounded-lg">
-                            <header className="w-full py-5 text-center bg-purple-600 text-white font-semibold rounded-t-lg">
-                                <h1 className="text-3xl ">Create New Habit</h1>
-                            </header>
+  if (!isModal) return null;
 
-                            <div className="p-10">
-                                <h1 className="font-semibold mb-2">Habit Name</h1>
-                                <input
-                                    type="text"
-                                    placeholder="Enter habit name..."
-                                    className="border bg-gray-100 py-2 w-full pl-4 rounded-md"
-                                    value={habit}
-                                    onChange={(e) => setHabit(e.target.value)}
-                                    required
-                                />
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70"
+    >
+      <div className="bg-white w-[30rem] rounded-xl shadow-lg overflow-hidden">
+        <header className="bg-purple-600 py-5 text-center text-white text-2xl font-semibold">
+          Create New Habit
+        </header>
 
-                                <h1 className="font-semibold mt-4 mb-2">Category</h1>
-                                <select
-                                    value={category}
-                                    onChange={(e) => setCategory(e.target.value)}
-                                    className="border bg-gray-100 py-2 w-full pl-4 rounded-md"
-                                    required
-                                >
-                                    <option value='' disabled hidden>Select category</option>
-                                    <option value='Fitness'>Fitness</option>
-                                    <option value='Career'>Career</option>
-                                    <option value='Spiritual'>Spiritual</option>
-                                    <option value='Other'>Other</option>
-                                </select>
+        <div className="p-6 space-y-6">
+          <div>
+            <label htmlFor="habitName" className="font-medium text-gray-800 block mb-1">
+              Habit Name
+            </label>
+            <input
+              id="habitName"
+              type="text"
+              placeholder="Enter habit name..."
+              className="w-full border bg-gray-100 py-2 px-4 rounded-md"
+              value={habit}
+              onChange={(e) => setHabit(e.target.value)}
+              required
+            />
+          </div>
 
-                                <h1 className="font-semibold mt-4 mb-2">Frequency</h1>
-                                <div className="flex gap-5">
-                                    <button 
-                                    onClick={onSetDaily}
-                                    className="border border-gray-300 px-5 py-2 rounded-full  hover:cursor-pointer bg-purple-600 text-white" 
-                                        >Daily
-                                    </button>
-                                    <button className="border border-gray-300 px-5 py-2 rounded-full  hover:cursor-pointer ">Custom</button>
-                                </div>
-                                
-                                {/* Days it will appear on calendar for that week */}
-                                <div className="flex flex-row justify-center gap-3 flex-wrap my-6">
-                                {filteredDays.map((day) => (
-                                    <button
-                                        key={day}
-                                        onClick={() => checkHabit(day)}
-                                        className={`p-2 rounded ${
-                                        checkedDays[day]
-                                            ? "bg-purple-600 text-white"
-                                            : "bg-gray-200"
-                                        }`}
-                                    >
-                                        {day}
-                                    </button>
-                                    ))}
-                                </div>
+          <div>
+            <label htmlFor="category" className="font-medium text-gray-800 block mb-1">
+              Category
+            </label>
+            <select
+              id="category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full border bg-gray-100 py-2 px-4 rounded-md"
+              required
+            >
+              <option value='' disabled hidden>Select category</option>
+              <option value='Fitness'>Fitness</option>
+              <option value='Career'>Career</option>
+              <option value='Spiritual'>Spiritual</option>
+              <option value='Other'>Other</option>
+            </select>
+          </div>
 
-                                <div className="flex flex-row justify-center gap-3">
-                                    <button 
-                                    type="submit"
-                                    onClick={addHabit}
-                                    className=" bg-purple-600 border border-none px-5 py-2 rounded-md  hover:cursor-pointer text-white hover:bg-opacity-80">
-                                        Submit
-                                    </button>
+          <div>
+            <label className="font-medium text-gray-800 block mb-1">Frequency</label>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                    onSetDaily();
+                    setFrequencyMode("daily");
+                }}
+                className={`px-4 py-2 rounded-full ${frequencyMode === "daily" ? "bg-purple-600 text-white" : "border border-gray-300 text-gray-700 hover:bg-gray-100"}`}
+              >
+                Daily
+              </button>
+              <button
+                onClick={() => setFrequencyMode("custom")}
+                className={`px-4 py-2 rounded-full ${frequencyMode === "custom" ? "bg-purple-600 text-white" : "border border-gray-300 text-gray-700 hover:bg-gray-100"}`}
+              >
+                Custom
+              </button>
+            </div>
+          </div>
 
-                                    <button 
-                                    onClick={() => setIsModal(false)}
-                                    className=" bg-white border border-gray-700 px-5 py-2 rounded-md hover:cursor-pointer text-gray-700 hover:border-purple-600">
-                                        Cancel
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div> 
-                : 
-                null
-                }
-            </main>
+          {frequencyMode === "custom" && (
+            <div className="flex flex-wrap gap-3 mt-3">
+                {filteredDays.map((day) => (
+                <label key={day} className="flex items-center gap-2">
+                    <input
+                    type="checkbox"
+                    checked={checkedDays[day]}
+                    onChange={() => checkHabit(day)}
+                    className="accent-purple-600"
+                    />
+                    <span className="text-sm">{day}</span>
+                </label>
+                ))}
+            </div>
+          )}
+
+          <div>
+            <label className="font-medium text-gray-800 block mb-1">Select Date</label>
+            <DatePicker
+              selected={DateTime.fromISO(selectedDate).toJSDate()}
+              onChange={(date: Date) => {
+                const formatted = DateTime.fromJSDate(date).toFormat("yyyy-LL-dd");
+                console.log("📆 Picker changed:", formatted);
+                onDateChange(formatted);
+              }}
+              className="w-full border bg-gray-100 py-2 px-4 rounded-md"
+              calendarClassName="rounded-md"
+              dateFormat="yyyy-MM-dd"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              onClick={() => setIsModal(false)}
+              className="px-5 py-2 border border-gray-400 text-gray-700 rounded-md hover:border-purple-600"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              onClick={addHabit}
+              className="px-5 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+            >
+              Submit
+            </button>
+          </div>
         </div>
-    )
-}
+      </div>
+    </div>
+  );
+};
 
-export default AddHabitModal
+export default AddHabitModal;
