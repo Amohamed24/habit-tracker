@@ -1,11 +1,11 @@
 
 import { useEffect, useState } from "react";
-import { FaPlus } from "react-icons/fa";
+import { FaCalendarAlt, FaPlus } from "react-icons/fa";
 import { DateTime } from 'luxon';
 import HabitCard from '../../components/HabitCard'
 import AddHabitModal from "../../components/AddHabitModal"
 import { Habit, HabitDay } from "../../utils/utils";
-import { FaArrowLeft, FaArrowRight } from "react-icons/fa";
+import DatePicker from "react-datepicker";
 
 
 const DashboardPage = () => {
@@ -39,10 +39,12 @@ const DashboardPage = () => {
     const [lastDateSelectionTime, setLastDateSelectionTime] = useState<number>(Date.now());
 
     const today = DateTime.now().setZone('America/Chicago');
-    const todaysDay = today.toFormat('ccc')
     const todaysDate = today.toFormat('yyyy-LL-dd')
 
-    const [selectedDate, setSelectedDate] = useState(todaysDate)
+    const [selectedDate, setSelectedDate] = useState(() =>
+        DateTime.fromISO(localStorage.getItem("selectedDate") || todaysDate).toFormat("yyyy-LL-dd")
+      )
+      
 
     const setAllDaysChecked = () => {
         setCheckedDays({
@@ -56,6 +58,21 @@ const DashboardPage = () => {
         })
     }
 
+    useEffect(() => {
+        const storedHabits = localStorage.getItem("scheduledHabits");
+        if (storedHabits) {
+          setScheduledHabits(JSON.parse(storedHabits));
+        }
+      }, []);
+
+    useEffect(() => {
+        localStorage.setItem("scheduledHabits", JSON.stringify(scheduledHabits));
+      }, [scheduledHabits]);
+
+      useEffect(() => {
+        localStorage.setItem("selectedDate", selectedDate);
+      }, [selectedDate]);
+      
     const addItem = () => {
         setIsModal(!isModal)
     }
@@ -99,7 +116,6 @@ const DashboardPage = () => {
             if (!selectedDays.includes(weekdayOfSelectedDate)) {
                 return prev;
             }
-
 
             if (!updated[selectedDate]) {
                 updated[selectedDate] = {
@@ -195,11 +211,16 @@ const DashboardPage = () => {
             [weekday]: true,
           });          
       
-        console.log("📆 Picker changed:", selectedDate, "| Auto-selected:", weekday);
+        console.log("Picker changed:", selectedDate, "| Auto-selected:", weekday);
     })
       
 
-    const weekNumber = [1, 2, 3, 4]
+    const startOfWeek = DateTime.fromISO(selectedDate).startOf('week'); 
+
+    const weekDates = Array.from({ length: 7 }, (_, i) =>
+    startOfWeek.plus({ days: i })
+    );
+
 
       
     return (
@@ -212,29 +233,39 @@ const DashboardPage = () => {
             <main>
                 <section className='flex items-center justify-between gap-4 mx-10 my-4 px-6 py-4 h-auto border bg-white rounded-2xl'>
                         <div className='flex gap-4'>
-                            {filteredDays.map((day) => (
-                                <button
-                                    key={day}
-                                    className={`h-12 w-12 rounded-full flex items-center justify-center text-sm font-semibold
-                                    ${checkedDays[day] ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-800'}
-                                    hover:bg-purple-500 hover:text-white transition`}
-                                >
-                                    {day.slice(0, 2)}
-                                </button>
-                            ))}
-                            <div className="flex gap-2">
-                                <button className="flex items-center justify-center border border-purple-400 text-purple-400 h-10 w-10 rounded-full">
-                                    <FaArrowLeft 
-                                        size={20}
-                                    />
-                                </button>
-                                <button className="flex items-center justify-center border border-purple-400 text-purple-400  h-10 w-10 rounded-full">
-                                    <FaArrowRight 
-                                        size={20}
-                                    />
-                                </button>
-                            </div>
+                            {weekDates.map((date) => {
+                                const dayLabel = date.toFormat('ccc'); 
+                                const dayNum = date.toFormat('dd');  
+                                const fullDate = date.toFormat("yyyy-LL-dd");
+
+                                return (
+                                    <button
+                                    key={fullDate}
+                                    onClick={() => setSelectedDate(fullDate)}
+                                    className={`h-12 w-12 rounded-full flex flex-col items-center justify-center text-xs font-medium
+                                        ${selectedDate === fullDate ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-800'}
+                                        hover:bg-purple-500 hover:text-white transition`}
+                                    >
+                                    <span>{dayLabel}</span>
+                                    <span>{dayNum}</span>
+                                    </button>
+                                );
+                            })}
                         </div>
+
+                        <DatePicker
+                            selected={DateTime.fromISO(selectedDate).toJSDate()}
+                            onChange={(date: Date) => {
+                                const formatted = DateTime.fromJSDate(date).toFormat("yyyy-LL-dd");
+                                console.log("📆 Picker changed:", formatted);
+                                setSelectedDate(formatted);
+                            }}
+                            customInput={
+                                <button className="p-2 bg-purple-600 text-white rounded-full hover:bg-purple-500">
+                                    <FaCalendarAlt size={20}/>
+                                </button>
+                            }
+                        />
                 </section>
 
                 <section className='mx-10 my-6 p-6 bg-white rounded-2xl border text-center'>
