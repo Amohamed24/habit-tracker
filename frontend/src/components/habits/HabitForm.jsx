@@ -35,7 +35,6 @@ const HabitForm = ({ habit, onSubmit, onCancel }) => {
         targetFrequency,
       });
       
-      // Reset form if creating new habit
       if (!isEditing) {
         setName('');
         setDescription('');
@@ -50,27 +49,26 @@ const HabitForm = ({ habit, onSubmit, onCancel }) => {
 
   return (
     <form className="habit-form" onSubmit={handleSubmit}>
-      <h3>{isEditing ? 'Edit Habit' : 'Create New Habit'}</h3>
-      
-      {error && <div className="error-message">{error}</div>}
+      {error && <div className="form-error">{error}</div>}
       
       <div className="form-group">
-        <label htmlFor="name">Habit Name *</label>
+        <label htmlFor="habit-name">Habit Name</label>
         <input
           type="text"
-          id="name"
+          id="habit-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="e.g., Exercise, Read, Meditate"
+          placeholder="e.g., Morning meditation"
           required
           disabled={loading}
+          autoFocus
         />
       </div>
       
       <div className="form-group">
-        <label htmlFor="description">Description (optional)</label>
+        <label htmlFor="habit-description">Description <span className="optional">(optional)</span></label>
         <textarea
-          id="description"
+          id="habit-description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Add details about your habit..."
@@ -80,27 +78,54 @@ const HabitForm = ({ habit, onSubmit, onCancel }) => {
       </div>
       
       <div className="form-group">
-        <label htmlFor="frequency">Frequency</label>
-        <select
-          id="frequency"
-          value={targetFrequency}
-          onChange={(e) => setTargetFrequency(e.target.value)}
-          disabled={loading}
-        >
-          <option value="DAILY">Daily</option>
-          <option value="WEEKLY">Weekly</option>
-        </select>
+        <label>Frequency</label>
+        <div className="frequency-options">
+          <button
+            type="button"
+            className={`frequency-btn ${targetFrequency === 'DAILY' ? 'active' : ''}`}
+            onClick={() => setTargetFrequency('DAILY')}
+            disabled={loading}
+          >
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="2"/>
+              <path d="M3 10H21" stroke="currentColor" strokeWidth="2"/>
+              <path d="M8 2V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              <path d="M16 2V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+            Daily
+          </button>
+          <button
+            type="button"
+            className={`frequency-btn ${targetFrequency === 'WEEKLY' ? 'active' : ''}`}
+            onClick={() => setTargetFrequency('WEEKLY')}
+            disabled={loading}
+          >
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="2"/>
+              <path d="M3 10H21" stroke="currentColor" strokeWidth="2"/>
+              <path d="M9 16H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+            Weekly
+          </button>
+        </div>
       </div>
       
       <div className="form-actions">
-        <button type="submit" disabled={loading}>
-          {loading ? 'Saving...' : isEditing ? 'Update' : 'Create'}
-        </button>
         {onCancel && (
-          <button type="button" onClick={onCancel} disabled={loading}>
+          <button type="button" className="btn-secondary" onClick={onCancel} disabled={loading}>
             Cancel
           </button>
         )}
+        <button type="submit" className="btn-primary" disabled={loading}>
+          {loading ? (
+            <>
+              <span className="btn-spinner"></span>
+              {isEditing ? 'Saving...' : 'Creating...'}
+            </>
+          ) : (
+            isEditing ? 'Save Changes' : 'Create Habit'
+          )}
+        </button>
       </div>
     </form>
   );

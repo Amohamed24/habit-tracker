@@ -1,48 +1,44 @@
-import { useState } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useState, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { register, clearError } from '../../store/authSlice';
 
 const RegisterForm = ({ onSwitchToLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [localError, setLocalError] = useState('');
   
-  const { register } = useAuth();
+  const dispatch = useDispatch();
+  const { loading, error } = useSelector((state) => state.auth);
+
+  useEffect(() => {
+    dispatch(clearError());
+  }, [dispatch]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setLocalError('');
 
-    // Validate passwords match
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setLocalError('Passwords do not match');
       return;
     }
 
-    // Validate password length
     if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setLocalError('Password must be at least 6 characters');
       return;
     }
 
-    setLoading(true);
-
-    try {
-      await register(email, password);
-      // Navigation will happen automatically due to auth state change
-    } catch (err) {
-      setError(err.message || 'Registration failed. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    dispatch(register({ email, password }));
   };
+
+  const displayError = localError || error;
 
   return (
     <div className="auth-form">
       <h2>Create Account</h2>
       
-      {error && <div className="error-message">{error}</div>}
+      {displayError && <div className="error-message">{displayError}</div>}
       
       <form onSubmit={handleSubmit}>
         <div className="form-group">
