@@ -52,7 +52,9 @@ const HabitForm = ({ habit, onSubmit, onCancel }) => {
       {error && <div className="form-error">{error}</div>}
       
       <div className="form-group">
-        <label htmlFor="habit-name">Habit Name</label>
+        <label htmlFor="habit-name">
+          Habit Name <span className="required">*</span>
+        </label>
         <input
           type="text"
           id="habit-name"
@@ -61,7 +63,8 @@ const HabitForm = ({ habit, onSubmit, onCancel }) => {
           placeholder="e.g., Morning meditation"
           required
           disabled={loading}
-          autoFocus
+          aria-required="true"
+          aria-invalid={error && !name.trim() ? 'true' : 'false'}
         />
       </div>
       

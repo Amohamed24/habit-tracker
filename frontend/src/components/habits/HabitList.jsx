@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   fetchHabits,
@@ -9,6 +9,7 @@ import {
 } from '../../store/habitsSlice';
 import HabitCard from './HabitCard';
 import HabitForm from './HabitForm';
+import useFocusTrap from '../../hooks/useFocasTrap';
 
 const HabitList = () => {
   const dispatch = useDispatch();
@@ -16,32 +17,61 @@ const HabitList = () => {
   
   const [editingHabit, setEditingHabit] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
 
   useEffect(() => {
     dispatch(fetchHabits());
   }, [dispatch]);
 
-  const handleCreate = async (habitData) => {
+  // Close modal on Escape key
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        if (showAddForm) setShowAddForm(false);
+        if (editingHabit) setEditingHabit(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showAddForm, editingHabit]);
+
+  const handleCreate = useCallback(async (habitData) => {
     await dispatch(createHabit(habitData)).unwrap();
     setShowAddForm(false);
-  };
+    setAnnouncement(`Habit "${habitData.name}" created successfully`);
+  }, [dispatch]);
 
-  const handleUpdate = async (habitData) => {
+  const handleUpdate = useCallback(async (habitData) => {
     await dispatch(updateHabit({ id: editingHabit.id, habitData })).unwrap();
     setEditingHabit(null);
-  };
+  }, [dispatch, editingHabit?.id]);
 
-  const handleDelete = async (id) => {
+  const handleDelete = useCallback(async (id) => {
+    const habit = habits.find(h => h.id === id);
     await dispatch(deleteHabit(id)).unwrap();
-  };
+    setAnnouncement(`Habit "${habit?.name}" deleted`);
+  }, [dispatch, habits]);
 
-  const handleToggleComplete = async (id, isCompleted) => {
+  const handleToggleComplete = useCallback(async (id, isCompleted) => {
+    const habit = habits.find(h => h.id === id);
     await dispatch(toggleHabitComplete({ id, isCompleted })).unwrap();
-  };
+    setAnnouncement(
+      isCompleted 
+        ? `${habit?.name} marked as incomplete` 
+        : `${habit?.name} completed`
+    );
+  }, [dispatch, habits]);
 
   // Calculate stats
-  const completedToday = habits.filter(h => h.completedToday).length;
+  const completedToday = useMemo(
+    () => habits.filter(h => h.completedToday).length,
+    [habits]
+  );
   const totalHabits = habits.length;
+
+  const addModalRef = useFocusTrap(showAddForm);
+  const editModalRef = useFocusTrap(!!editingHabit);
 
   if (loading && habits.length === 0) {
     return (
@@ -61,7 +91,14 @@ const HabitList = () => {
             <span className="progress-label">Today's Progress</span>
             <span className="progress-count">{completedToday}/{totalHabits}</span>
           </div>
-          <div className="progress-bar">
+          <div 
+            className="progress-bar"
+            role="progressbar"
+            aria-valuenow={completedToday}
+            aria-valuemin={0}
+            aria-valuemax={totalHabits}
+            aria-label={`${completedToday} of ${totalHabits} habits completed today`}
+          >
             <div 
               className="progress-fill" 
               style={{ width: `${(completedToday / totalHabits) * 100}%` }}
@@ -81,7 +118,7 @@ const HabitList = () => {
               <path d="M12 6V12L16 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
             </svg>
           </div>
-          <h3>No habits yet</h3>
+          <h2>No habits yet</h2>
           <p>Create your first habit to start building better routines!</p>
         </div>
       ) : (
@@ -101,7 +138,14 @@ const HabitList = () => {
       {/* Edit Modal */}
       {editingHabit && (
         <div className="modal-overlay" onClick={() => setEditingHabit(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div 
+            className="modal" 
+            onClick={(e) => e.stopPropagation()}
+            ref={editModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-modal-title"
+          >
             <div className="modal-header">
               <h2>Edit Habit</h2>
               <button 
@@ -126,7 +170,14 @@ const HabitList = () => {
       {/* Add Habit Modal */}
       {showAddForm && (
         <div className="modal-overlay" onClick={() => setShowAddForm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div 
+            className="modal" 
+            onClick={(e) => e.stopPropagation()}
+            ref={addModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-modal-title"
+          >
             <div className="modal-header">
               <h2>Create New Habit</h2>
               <button 
@@ -157,6 +208,15 @@ const HabitList = () => {
           <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </button>
+      
+      <div 
+        role="status" 
+        aria-live="polite" 
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {announcement}
+      </div>
     </div>
   );
 };

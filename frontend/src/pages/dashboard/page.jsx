@@ -34,16 +34,6 @@ const Dashboard = () => {
     day: 'numeric'
   });
 
-  // Get user initials
-  const getInitials = (email) => {
-    if (!email) return '?';
-    const parts = email.split('@')[0].split(/[._-]/);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return email.substring(0, 2).toUpperCase();
-  };
-
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -63,6 +53,11 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard">
+      {/* Skip Link */}
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+
       {/* Header */}
       <header className="dashboard-header">
         <div className="header-logo">
@@ -80,13 +75,16 @@ const Dashboard = () => {
             onClick={() => setShowDropdown(!showDropdown)}
             aria-label="User menu"
           >
-            {getInitials(user?.email)}
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M20 21V19C20 17.9391 19.5786 16.9217 18.8284 16.1716C18.0783 15.4214 17.0609 15 16 15H8C6.93913 15 5.92172 15.4214 5.17157 16.1716C4.42143 16.9217 4 17.9391 4 19V21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M12 11C14.2091 11 16 9.20914 16 7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7C8 9.20914 9.79086 11 12 11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </button>
 
           {showDropdown && (
             <div className="dropdown-menu">
               <div className="dropdown-header">
-                <span className="dropdown-email">{user?.email}</span>
+                <span className="dropdown-email" title={user?.email}>{user?.email}</span>
               </div>
               <div className="dropdown-divider"></div>
               <button className="dropdown-item" onClick={handleLogout}>
@@ -103,7 +101,7 @@ const Dashboard = () => {
       </header>
 
       {/* Main Content */}
-      <main className="dashboard-content">
+      <main id="main-content" className="dashboard-content">
         {/* Today's Section */}
         <div className="today-section">
           <h1 className="today-title">Today's Habits</h1>
