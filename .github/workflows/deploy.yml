@@ -1,0 +1,16 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deployment triggered
+        run: |
+          echo "✅ Push to main detected"
+          echo "Railway and Vercel will auto-deploy"
+          echo "Backend: https://your-railway-url.up.railway.app"
+          echo "Frontend: https://habitflow.vercel.app"
