@@ -17,6 +17,7 @@ const handleResponse = async (response) => {
 
 // API client with all methods
 const apiClient = {
+  baseURL: API_BASE_URL,
   // GET request
   get: async (endpoint) => {
     const token = getToken();
