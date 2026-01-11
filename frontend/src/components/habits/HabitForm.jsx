@@ -13,7 +13,7 @@ const HabitForm = ({ habit, onSubmit, onCancel }) => {
     if (habit) {
       setName(habit.name);
       setDescription(habit.description || '');
-      setTargetFrequency(habit.targetFrequency);
+      setTargetFrequency(habit.frequency?.toUpperCase() || 'DAILY');
     }
   }, [habit]);
 
@@ -32,7 +32,7 @@ const HabitForm = ({ habit, onSubmit, onCancel }) => {
       await onSubmit({
         name: name.trim(),
         description: description.trim(),
-        targetFrequency,
+        frequency: targetFrequency.toLowerCase(),
       });
       
       if (!isEditing) {

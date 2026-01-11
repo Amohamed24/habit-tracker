@@ -28,11 +28,11 @@ export const habitsAPI = {
 
   // Mark habit as complete for today
   markComplete: async (id) => {
-    return apiClient.post(`/habits/${id}/complete`);
+    return apiClient.post(`/habits/${id}/toggle`);
   },
 
   // Unmark habit completion for today
   unmarkComplete: async (id) => {
-    return apiClient.delete(`/habits/${id}/complete`);
+    return apiClient.post(`/habits/${id}/toggle`);
   },
 };

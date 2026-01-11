@@ -1,4 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const AUTH_URL = import.meta.env.VITE_AUTH_URL || 'http://localhost:8081/api';
+const HABITS_URL = import.meta.env.VITE_HABITS_URL || 'http://localhost:8080/api';
 
 // Helper to get token from localStorage
 const getToken = () => localStorage.getItem('token');
@@ -8,96 +9,150 @@ const handleResponse = async (response) => {
   const data = await response.json().catch(() => null);
   
   if (!response.ok) {
-    const error = data?.message || `HTTP error! status: ${response.status}`;
+    const error = data?.error || data?.message || `HTTP error! status: ${response.status}`;
     throw new Error(error);
   }
   
   return data;
 };
 
-// API client with all methods
-const apiClient = {
-  baseURL: API_BASE_URL,
-  // GET request
-  get: async (endpoint) => {
-    const token = getToken();
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'GET',
-      headers,
-    });
-    
-    return handleResponse(response);
-  },
-
-  // POST request
-  post: async (endpoint, data) => {
-    const token = getToken();
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+// Auth API
+export const authApi = {
+  register: async (data) => {
+    const response = await fetch(`${AUTH_URL}/auth/register`, {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    
     return handleResponse(response);
   },
+  
+  login: async (data) => {
+    const response = await fetch(`${AUTH_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
+};
 
-  // PUT request
-  put: async (endpoint, data) => {
-    const token = getToken();
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+// Habits API
+export const habitsApi = {
+  getAll: async () => {
+    const response = await fetch(`${HABITS_URL}/habits`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
+    });
+    return handleResponse(response);
+  },
+  
+  getById: async (id) => {
+    const response = await fetch(`${HABITS_URL}/habits/${id}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
+    });
+    return handleResponse(response);
+  },
+  
+  create: async (data) => {
+    const response = await fetch(`${HABITS_URL}/habits`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
+  
+  update: async (id, data) => {
+    const response = await fetch(`${HABITS_URL}/habits/${id}`, {
       method: 'PUT',
-      headers,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
       body: JSON.stringify(data),
     });
-    
     return handleResponse(response);
   },
-
-  // DELETE request
-  delete: async (endpoint) => {
-    const token = getToken();
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  
+  delete: async (id) => {
+    const response = await fetch(`${HABITS_URL}/habits/${id}`, {
       method: 'DELETE',
-      headers,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
     });
-    
-    // DELETE often returns 204 No Content
-    if (response.status === 204) {
-      return null;
-    }
-    
+    if (response.status === 204) return null;
+    return handleResponse(response);
+  },
+  
+  toggleComplete: async (id) => {
+    const response = await fetch(`${HABITS_URL}/habits/${id}/toggle`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
+    });
+    return handleResponse(response);
+  },
+};
+
+// Default export for backward compatibility
+const apiClient = {
+  get: async (endpoint) => {
+    const url = endpoint.startsWith('/auth') ? AUTH_URL : HABITS_URL;
+    const response = await fetch(`${url}${endpoint}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
+    });
+    return handleResponse(response);
+  },
+  post: async (endpoint, data) => {
+    const url = endpoint.startsWith('/auth') ? AUTH_URL : HABITS_URL;
+    const response = await fetch(`${url}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
+  put: async (endpoint, data) => {
+    const url = endpoint.startsWith('/auth') ? AUTH_URL : HABITS_URL;
+    const response = await fetch(`${url}${endpoint}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(response);
+  },
+  delete: async (endpoint) => {
+    const url = endpoint.startsWith('/auth') ? AUTH_URL : HABITS_URL;
+    const response = await fetch(`${url}${endpoint}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
+    });
+    if (response.status === 204) return null;
     return handleResponse(response);
   },
 };
