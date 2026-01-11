@@ -1,0 +1,20 @@
+package com.habitflow.habits.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class HabitRequest {
+    
+    @NotBlank(message = "Name is required")
+    private String name;
+    
+    private String description;
+    
+    @NotBlank(message = "Frequency is required")
+    private String frequency;
+}
