@@ -4,6 +4,9 @@ import com.habitflow.habits.dto.HabitRequest;
 import com.habitflow.habits.dto.HabitResponse;
 import com.habitflow.habits.entity.Habit;
 import com.habitflow.habits.entity.HabitCompletion;
+import com.habitflow.habits.event.HabitCompletedEvent;
+import com.habitflow.habits.event.HabitCreatedEvent;
+import com.habitflow.habits.event.KafkaProducer;
 import com.habitflow.habits.repository.HabitCompletionRepository;
 import com.habitflow.habits.repository.HabitRepository;
 import jakarta.transaction.Transactional;
@@ -11,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -20,6 +24,7 @@ public class HabitService {
     
     private final HabitRepository habitRepository;
     private final HabitCompletionRepository completionRepository;
+    private final KafkaProducer kafkaProducer;
     
     public List<HabitResponse> getHabitsByUserId(Long userId) {
         return habitRepository.findByUserId(userId).stream()
@@ -42,6 +47,16 @@ public class HabitService {
                 .build();
         
         habit = habitRepository.save(habit);
+        
+        // Publish event to Kafka
+        kafkaProducer.sendHabitCreatedEvent(HabitCreatedEvent.builder()
+                .habitId(habit.getId())
+                .userId(userId)
+                .habitName(habit.getName())
+                .frequency(habit.getFrequency())
+                .createdAt(LocalDateTime.now())
+                .build());
+        
         return mapToResponse(habit);
     }
     
@@ -79,6 +94,15 @@ public class HabitService {
                     .completionDate(today)
                     .build();
             completionRepository.save(completion);
+            
+            // Publish event to Kafka
+            kafkaProducer.sendHabitCompletedEvent(HabitCompletedEvent.builder()
+                    .habitId(habit.getId())
+                    .userId(userId)
+                    .habitName(habit.getName())
+                    .completionDate(today)
+                    .completedAt(LocalDateTime.now())
+                    .build());
         }
         
         return mapToResponse(habit);
