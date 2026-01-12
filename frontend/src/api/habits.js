@@ -1,5 +1,8 @@
 import apiClient from './client';
 
+const HABITS_URL = import.meta.env.VITE_HABITS_URL || 'http://localhost:8080/api';
+const isProduction = HABITS_URL.includes('railway');
+
 export const habitsAPI = {
   // Get all habits for current user
   getAll: async () => {
@@ -28,11 +31,17 @@ export const habitsAPI = {
 
   // Mark habit as complete for today
   markComplete: async (id) => {
+    if (isProduction) {
+      return apiClient.post(`/habits/${id}/complete`);
+    }
     return apiClient.post(`/habits/${id}/toggle`);
   },
 
   // Unmark habit completion for today
   unmarkComplete: async (id) => {
+    if (isProduction) {
+      return apiClient.delete(`/habits/${id}/complete`);
+    }
     return apiClient.post(`/habits/${id}/toggle`);
   },
 };

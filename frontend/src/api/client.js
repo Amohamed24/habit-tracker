@@ -94,16 +94,32 @@ export const habitsApi = {
     if (response.status === 204) return null;
     return handleResponse(response);
   },
-  
-  toggleComplete: async (id) => {
-    const response = await fetch(`${HABITS_URL}/habits/${id}/toggle`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getToken()}`,
-      },
-    });
-    return handleResponse(response);
+
+  toggleComplete: async (id, isCurrentlyCompleted) => {
+    const isProduction = HABITS_URL.includes('railway');
+    
+    if (isProduction) {
+      // Monolith uses separate endpoints
+      const method = isCurrentlyCompleted ? 'DELETE' : 'POST';
+      const response = await fetch(`${HABITS_URL}/habits/${id}/complete`, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getToken()}`,
+        },
+      });
+      return handleResponse(response);
+    } else {
+      // Microservices use toggle
+      const response = await fetch(`${HABITS_URL}/habits/${id}/toggle`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getToken()}`,
+        },
+      });
+      return handleResponse(response);
+    }
   },
 };
 
