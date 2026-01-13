@@ -6,6 +6,7 @@ import com.habitflow.auth.event.KafkaProducer;
 import com.habitflow.auth.event.UserRegisteredEvent;
 import com.habitflow.auth.repository.UserRepository;
 import com.habitflow.auth.security.JwtService;
+import io.micrometer.core.instrument.Counter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,9 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final KafkaProducer kafkaProducer;
+    private final Counter userRegistrationCounter;
+    private final Counter userLoginCounter;
+    private final Counter userLoginFailedCounter;
     
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
@@ -34,6 +38,9 @@ public class AuthService {
         user = userRepository.save(user);
         
         String token = jwtService.generateToken(user.getId(), user.getEmail());
+        
+        // Increment registration counter
+        userRegistrationCounter.increment();
         
         // Publish event to Kafka
         kafkaProducer.sendUserRegisteredEvent(UserRegisteredEvent.builder()
@@ -51,13 +58,20 @@ public class AuthService {
     
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> {
+                    userLoginFailedCounter.increment();
+                    return new RuntimeException("User not found");
+                });
         
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            userLoginFailedCounter.increment();
             throw new RuntimeException("Invalid password");
         }
         
         String token = jwtService.generateToken(user.getId(), user.getEmail());
+        
+        // Increment login counter
+        userLoginCounter.increment();
         
         return AuthResponse.builder()
                 .token(token)

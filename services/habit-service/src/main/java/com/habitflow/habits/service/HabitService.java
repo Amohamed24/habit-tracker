@@ -9,6 +9,7 @@ import com.habitflow.habits.event.HabitCreatedEvent;
 import com.habitflow.habits.event.KafkaProducer;
 import com.habitflow.habits.repository.HabitCompletionRepository;
 import com.habitflow.habits.repository.HabitRepository;
+import io.micrometer.core.instrument.Counter;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,9 @@ public class HabitService {
     private final HabitRepository habitRepository;
     private final HabitCompletionRepository completionRepository;
     private final KafkaProducer kafkaProducer;
+    private final Counter habitsCreatedCounter;
+    private final Counter habitsCompletedCounter;
+    private final Counter habitsDeletedCounter;
     
     public List<HabitResponse> getHabitsByUserId(Long userId) {
         return habitRepository.findByUserId(userId).stream()
@@ -47,6 +51,9 @@ public class HabitService {
                 .build();
         
         habit = habitRepository.save(habit);
+        
+        // Increment counter
+        habitsCreatedCounter.increment();
         
         // Publish event to Kafka
         kafkaProducer.sendHabitCreatedEvent(HabitCreatedEvent.builder()
@@ -76,6 +83,9 @@ public class HabitService {
         Habit habit = habitRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new RuntimeException("Habit not found"));
         habitRepository.delete(habit);
+        
+        // Increment counter
+        habitsDeletedCounter.increment();
     }
     
     @Transactional
@@ -94,6 +104,9 @@ public class HabitService {
                     .completionDate(today)
                     .build();
             completionRepository.save(completion);
+            
+            // Increment counter
+            habitsCompletedCounter.increment();
             
             // Publish event to Kafka
             kafkaProducer.sendHabitCompletedEvent(HabitCompletedEvent.builder()
