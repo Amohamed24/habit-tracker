@@ -59,7 +59,7 @@ services:
       DB_NAME: habitflow
       DB_USER: postgres
       DB_PASSWORD: postgres
-      JWT_SECRET: Ju5t2weS0h7Pt9rs04GrynVl0g+e0wn/SI/ErhKpiaQ=
+      JWT_SECRET: bNLKKGEZbqr5p99YeAA6oDt+RNZtfRxYylm3KbBwh48=
       JWT_EXPIRATION: 86400000
       CORS_ORIGINS: http://localhost:3000,http://localhost:5173
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -90,5 +90,38 @@ services:
       - postgres
       - kafka
 
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: habitflow-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    depends_on:
+      - auth-service
+      - habit-service
+
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: habitflow-grafana
+    ports:
+      - "3002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
+  prometheus_data:
+  grafana_data:

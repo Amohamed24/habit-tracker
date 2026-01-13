@@ -29,6 +29,11 @@ backend/.idea/
 backend/*.iml
 backend/.mvn/
 
+# Services (microservices)
+**/target/
+**/*.iml
+.env
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
