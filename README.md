@@ -1,6 +1,6 @@
 # 🎯 HabitFlow
 
-A full-stack habit tracking application built with microservices architecture, featuring event-driven communication, real-time monitoring, and CI/CD automation.
+A full stack habit tracking application built with microservices architecture, featuring event-driven communication, real-time monitoring, and CI/CD automation.
 
 **Live Demo:** [habitflow.vercel.app](https://habit-tracker-one-murex.vercel.app)
 
@@ -440,5 +440,5 @@ MIT
 
 **Mohamed Ahmed**
 
-- LinkedIn: [linkedin.com/in/yourprofile](https://www.linkedin.com/in/mohamed-ahmed-0998041b3/)
-- GitHub: [github.com/yourusername](https://github.com/Amohamed24)
+- LinkedIn: [linkedin.com/in/mohamedahmed-dev/](https://www.linkedin.com/in/mohamedahmed-dev/)
+- GitHub: [github.com/Amohamed24](https://github.com/Amohamed24)
