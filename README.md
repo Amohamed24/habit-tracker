@@ -440,5 +440,5 @@ MIT
 
 **Mohamed Ahmed**
 
-- LinkedIn: [linkedin.com/in/yourprofile](https://www.linkedin.com/in/mohamed-ahmed-0998041b3/)
-- GitHub: [github.com/yourusername](https://github.com/Amohamed24)
+- LinkedIn: https://www.linkedin.com/in/mohamedahmed-dev
+- GitHub: https://github.com/Amohamed24
