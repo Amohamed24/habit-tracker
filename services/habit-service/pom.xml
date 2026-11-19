@@ -45,6 +45,12 @@
             <scope>runtime</scope>
         </dependency>
         
+        <!-- Schema migrations (Boot 3.2.0 manages Flyway 9.22.3; flyway-core covers Postgres before Flyway 10) -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -116,6 +122,11 @@
                         </exclude>
                     </excludes>
                 </configuration>
+            </plugin>
+            <!-- Runs *IT classes in the integration-test phase (version and executions come from the Boot parent) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
             </plugin>
         </plugins>
     </build>
