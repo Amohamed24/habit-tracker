@@ -13,9 +13,6 @@ RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
 # Copy source code
 COPY src src
 
-# HF-5 THROWAWAY: deliberately broken Dockerfile. Reverted before the PR is ready.
-RUN echo "HF-5 throwaway: deliberately broken Dockerfile" && exit 1
-
 # Build the application
 RUN ./mvnw package -DskipTests
 
