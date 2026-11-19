@@ -3,12 +3,13 @@ package com.habitflow.habits;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.context.event.ApplicationEnvironmentPreparedEvent;
+import org.springframework.context.ApplicationListener;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -133,18 +134,38 @@ class FlywayBaselineIT {
      * only sets <em>default</em> properties, which application.yml beats, so the app would silently connect to
      * {@code localhost:5432/habitflow} (whatever Postgres is listening there) instead of the container.
      */
-    private static void boot(String db) throws SQLException {
-        try (ConfigurableApplicationContext ctx = new SpringApplicationBuilder(HabitServiceApplication.class)
+    private static void boot(String db) {
+        try (ConfigurableApplicationContext ignored = new SpringApplicationBuilder(HabitServiceApplication.class)
                 .web(WebApplicationType.NONE)
+                .listeners(new TestcontainersOnlyGuard(jdbcUrl(db)))
                 .run(
                         "--spring.datasource.url=" + jdbcUrl(db),
                         "--spring.datasource.username=" + postgres.getUsername(),
                         "--spring.datasource.password=" + postgres.getPassword(),
                         "--spring.kafka.listener.auto-startup=false",
                         "--spring.kafka.admin.auto-create=false")) {
-            // started = Flyway migrated and Hibernate validation passed; prove it was against the container DB
-            try (Connection c = ctx.getBean(DataSource.class).getConnection()) {
-                assertThat(c.getMetaData().getURL()).isEqualTo(jdbcUrl(db));
+            // started = Flyway migrated and Hibernate validation passed
+        }
+    }
+
+    /**
+     * Pre-boot guard: once the environment is resolved (all property sources, application.yml included)
+     * and before any bean exists (no Hikari pool, no Flyway), abort unless spring.datasource.url is
+     * exactly this scenario's Testcontainers database.
+     */
+    private static final class TestcontainersOnlyGuard implements ApplicationListener<ApplicationEnvironmentPreparedEvent> {
+        private final String expectedUrl;
+
+        TestcontainersOnlyGuard(String expectedUrl) {
+            this.expectedUrl = expectedUrl;
+        }
+
+        @Override
+        public void onApplicationEvent(ApplicationEnvironmentPreparedEvent event) {
+            String resolved = event.getEnvironment().getProperty("spring.datasource.url");
+            if (!expectedUrl.equals(resolved)) {
+                throw new IllegalStateException("FlywayBaselineIT guard: refusing to boot, spring.datasource.url resolved to ["
+                        + resolved + "] but this test may only use the Testcontainers database [" + expectedUrl + "]");
             }
         }
     }
