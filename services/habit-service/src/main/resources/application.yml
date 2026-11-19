@@ -8,11 +8,19 @@ spring:
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update
+      # Flyway owns the schema; Hibernate only checks the entities against it.
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    # Existing databases (old Hibernate volumes, or auth-service started first) are baselined at 0,
+    # so the idempotent V1 still runs on them. A baseline at 1 would skip V1 and never create the tables.
+    baseline-on-migrate: true
+    baseline-version: 0
+    # auth-service shares the habitflow database and public schema until R1b-03.
+    table: flyway_schema_history_habit
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
