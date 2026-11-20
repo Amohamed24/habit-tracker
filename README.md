@@ -421,6 +421,31 @@ If you see `docker-credential-desktop` errors:
 rm ~/.docker/config.json
 ```
 
+### Outbox: rows that keep failing
+habit-service publishes events from the `outbox_events` table. A row that fails to publish stays unsent
+(`sent_at IS NULL`) and is retried with exponential backoff capped at 5 minutes. `attempts`, `last_error`
+(the root cause's class and message) and `next_attempt_at` record each failure. A row that can never
+publish (a "poison" row, e.g. a payload over the broker's max message size) keeps retrying at the cap.
+
+Find them:
+```sql
+SELECT id, event_type, aggregate_id, attempts, next_attempt_at, last_error
+FROM outbox_events
+WHERE sent_at IS NULL AND attempts >= 5
+ORDER BY attempts DESC, created_at;
+```
+
+Then, depending on the cause:
+```sql
+-- Cause fixed (broker/config): retry now instead of waiting for the backoff.
+UPDATE outbox_events SET next_attempt_at = now() WHERE id = '<id>' AND sent_at IS NULL;
+
+-- Give up on one row deliberately: it is never published. Record why before you do it.
+UPDATE outbox_events SET sent_at = now(), last_error = 'abandoned manually: <reason>'
+WHERE id = '<id>' AND sent_at IS NULL;
+```
+Don't delete rows or edit `payload`. Consumers de-duplicate by `event_id`, so republishing a row is safe.
+
 ### Port Already in Use
 ```bash
 # Find and kill process on port

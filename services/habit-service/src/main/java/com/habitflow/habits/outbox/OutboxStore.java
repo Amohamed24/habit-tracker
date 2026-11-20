@@ -21,7 +21,7 @@ public class OutboxStore {
     // payload::text is Postgres's normalized jsonb text (keys reordered, whitespace changed):
     // consumers must parse JSON, never compare strings.
     static final String CLAIM_SQL = """
-            SELECT id, aggregate_id, event_type, event_version, payload::text AS payload
+            SELECT id, aggregate_id, event_type, event_version, payload::text AS payload, attempts
             FROM outbox_events
             WHERE sent_at IS NULL AND next_attempt_at <= now()
             ORDER BY created_at
@@ -31,6 +31,22 @@ public class OutboxStore {
 
     // clock_timestamp(), not now(): now() is the transaction start, i.e. before the broker acked.
     static final String MARK_SENT_SQL = "UPDATE outbox_events SET sent_at = clock_timestamp() WHERE id = ANY(?)";
+
+    // One UPDATE for all three columns (HF-13). next_attempt_at is written here, never through the entity
+    // (OutboxEvent.nextAttemptAt is insertable=false, updatable=false). clock_timestamp(), not now(): the
+    // batch may have waited up to outbox.send-timeout-ms since the transaction began, and a delay measured
+    // from now() could already be in the past at commit. sent_at is left NULL.
+    static final String MARK_FAILED_SQL = """
+            UPDATE outbox_events
+            SET attempts = attempts + 1,
+                last_error = ?,
+                next_attempt_at = clock_timestamp() + ? * interval '1 millisecond'
+            WHERE id = ? AND sent_at IS NULL
+            """;
+
+    /** A row to back off: its id, the (already truncated) error text, and the delay from now. */
+    public record Failure(UUID id, String lastError, long delayMillis) {
+    }
 
     private final JdbcTemplate jdbc;
 
@@ -42,7 +58,8 @@ public class OutboxStore {
                 rs.getString("aggregate_id"),
                 rs.getString("event_type"),
                 rs.getInt("event_version"),
-                rs.getString("payload")), limit);
+                rs.getString("payload"),
+                rs.getInt("attempts")), limit);
     }
 
     /** Sets sent_at on the given (acked) rows. No-op for an empty list. */
@@ -55,6 +72,19 @@ public class OutboxStore {
             PreparedStatement ps = con.prepareStatement(MARK_SENT_SQL);
             ps.setArray(1, con.createArrayOf("uuid", ids.toArray()));
             return ps;
+        });
+    }
+
+    /** attempts += 1, last_error, next_attempt_at = DB time + delay, in one batched UPDATE. No-op if empty. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void markFailed(List<Failure> failures) {
+        if (failures.isEmpty()) {
+            return;
+        }
+        jdbc.batchUpdate(MARK_FAILED_SQL, failures, failures.size(), (ps, f) -> {
+            ps.setString(1, f.lastError());
+            ps.setLong(2, f.delayMillis());
+            ps.setObject(3, f.id());
         });
     }
 }

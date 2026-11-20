@@ -197,8 +197,10 @@ class OutboxPublisherIT {
         assertThat(sentAt(later)).as("ordering is not enforced: the later row is not blocked").isNotNull();
         assertHeaders(awaitRecords(later, 1).get(0), "habit.completion_undone");
 
-        // Nothing about the failed row changed, so the next poll simply retries it.
+        // The failed row backs off (HF-13; details in OutboxPublisherFailureIT). Make it due by DB time and retry.
         reset(kafkaTemplate);
+        assertThat(publisher.publishBatch()).as("in backoff").isZero();
+        jdbc.update("UPDATE outbox_events SET next_attempt_at = now() WHERE id = ?", first);
         assertThat(publisher.publishBatch()).isEqualTo(1);
         assertThat(sentAt(first)).isNotNull();
         assertHeaders(awaitRecords(first, 1).get(0), "habit.completed");
@@ -232,7 +234,10 @@ class OutboxPublisherIT {
 
         verify(template(), times(1)).send(any(ProducerRecord.class));
         assertThat(sentAt(first)).isNull();
-        assertThat(sentAt(second)).as("never attempted: left for the next poll").isNull();
+        assertThat(sentAt(second)).as("never attempted").isNull();
+        // HF-13: both back off together, the unattempted row included, so a dead broker isn't hit every poll.
+        assertThat(attempts(first)).isEqualTo(1);
+        assertThat(attempts(second)).isEqualTo(1);
     }
 
     // --- helpers -------------------------------------------------------------------------------
@@ -299,6 +304,10 @@ class OutboxPublisherIT {
 
     private Object sentAt(UUID id) {
         return jdbc.queryForObject("SELECT sent_at FROM outbox_events WHERE id = ?", Object.class, id);
+    }
+
+    private int attempts(UUID id) {
+        return jdbc.queryForObject("SELECT attempts FROM outbox_events WHERE id = ?", Integer.class, id);
     }
 
     private String payloadText(UUID id) {
