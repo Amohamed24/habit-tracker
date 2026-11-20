@@ -35,7 +35,26 @@ class TestcontainersOnlyTest {
 
         assertThatThrownBy(() -> TestcontainersOnly.assertTestcontainersOnly(env, url))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("points at localhost:5432");
+                .hasMessageContaining("points at the local Postgres on port 5432");
+    }
+
+    @Test
+    void localhost54321_passes() {
+        // A container port that merely starts with 5432 is not the local Postgres (the old contains() check got this wrong).
+        String url = "jdbc:postgresql://localhost:54321/test?loggerLevel=OFF";
+        MockEnvironment env = new MockEnvironment().withProperty("spring.datasource.url", url);
+
+        assertThatCode(() -> TestcontainersOnly.assertTestcontainersOnly(env, url)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void loopback127_5432_refusedEvenWhenExpected() {
+        String url = "jdbc:postgresql://127.0.0.1:5432/habitflow";
+        MockEnvironment env = new MockEnvironment().withProperty("spring.datasource.url", url);
+
+        assertThatThrownBy(() -> TestcontainersOnly.assertTestcontainersOnly(env, url))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("points at the local Postgres on port 5432");
     }
 
     @Test

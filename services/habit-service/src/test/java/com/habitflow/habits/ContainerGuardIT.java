@@ -79,7 +79,8 @@ class ContainerGuardIT {
 
     @Test
     void matchingUrl_boots() throws SQLException {
-        boot("--spring.datasource.url=" + postgres.getJdbcUrl());
+        // Closed port: the control boot must not depend on (or reach) a local Kafka on 9092.
+        boot("--spring.datasource.url=" + postgres.getJdbcUrl(), "--spring.kafka.bootstrap-servers=localhost:1");
 
         assertThat(hasFlywayHistory(postgres.getJdbcUrl())).isTrue();
     }

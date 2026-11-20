@@ -21,6 +21,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.util.AopTestUtils;
+import org.springframework.transaction.IllegalTransactionStateException;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -82,6 +83,8 @@ class ToggleOutboxIT {
     @Autowired OutboxEventRepository outboxEventRepository;
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper objectMapper;
+    // Not used directly: if GuardConfig stops being picked up, this injection fails the context.
+    @Autowired TestcontainersOnly.Guard testcontainersOnlyGuard;
 
     @SpyBean OutboxWriter outboxWriter;
     @SpyBean HabitCompletionRepository completionRepository;
@@ -174,6 +177,16 @@ class ToggleOutboxIT {
                 .hasMessageContaining("boom after outbox save");
 
         assertThat(completions()).isZero();
+        assertThat(outboxRows()).isEmpty();
+    }
+
+    @Test
+    void outboxWriter_withoutTransaction_throws() {
+        // MANDATORY propagation: outside a transaction the write must fail, not auto-commit on its own.
+        assertThatThrownBy(() -> outboxWriter.write("habit", habitId.toString(), "habit.completed",
+                Map.of("habitId", habitId)))
+                .isInstanceOf(IllegalTransactionStateException.class);
+
         assertThat(outboxRows()).isEmpty();
     }
 

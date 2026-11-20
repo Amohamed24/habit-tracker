@@ -7,6 +7,9 @@ import org.springframework.core.Ordered;
 import org.springframework.core.PriorityOrdered;
 import org.springframework.core.env.Environment;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -16,7 +19,8 @@ import java.util.function.Supplier;
  */
 public final class TestcontainersOnly {
 
-    static final String FORBIDDEN_HOST_PORT = "localhost:5432";
+    static final int FORBIDDEN_PORT = 5432;
+    static final Set<String> LOCAL_HOSTS = Set.of("localhost", "127.0.0.1");
 
     private TestcontainersOnly() {
     }
@@ -32,14 +36,34 @@ public final class TestcontainersOnly {
             throw refuse("spring.datasource.url resolved to [" + datasourceUrl
                     + "] but this test may only use the Testcontainers database [" + expectedUrl + "]");
         }
-        if (datasourceUrl.contains(FORBIDDEN_HOST_PORT)) {
-            throw refuse("spring.datasource.url [" + datasourceUrl + "] points at " + FORBIDDEN_HOST_PORT);
+        if (isLocalPostgresDefault(datasourceUrl)) {
+            throw refuse("spring.datasource.url [" + datasourceUrl + "] points at the local Postgres on port "
+                    + FORBIDDEN_PORT);
         }
         String flywayUrl = env.getProperty("spring.flyway.url");
         if (flywayUrl != null) {
             throw refuse("spring.flyway.url is set to [" + flywayUrl
                     + "]; Flyway would bypass the checked datasource");
         }
+    }
+
+    /**
+     * Exact host+port match on the parsed JDBC URL: host localhost or 127.0.0.1 with port 5432.
+     * A URL without a port uses the Postgres default (5432), so it counts. A URL that can't be
+     * parsed as a single host is refused too, since the check can't prove where it points.
+     */
+    static boolean isLocalPostgresDefault(String jdbcUrl) {
+        URI uri;
+        try {
+            uri = new URI(jdbcUrl.startsWith("jdbc:") ? jdbcUrl.substring("jdbc:".length()) : jdbcUrl);
+        } catch (URISyntaxException e) {
+            throw refuse("spring.datasource.url [" + jdbcUrl + "] is not a parseable JDBC URL");
+        }
+        if (uri.getHost() == null) {
+            throw refuse("spring.datasource.url [" + jdbcUrl + "] has no single parseable host");
+        }
+        int port = uri.getPort() == -1 ? FORBIDDEN_PORT : uri.getPort();
+        return LOCAL_HOSTS.contains(uri.getHost()) && port == FORBIDDEN_PORT;
     }
 
     private static IllegalStateException refuse(String reason) {
