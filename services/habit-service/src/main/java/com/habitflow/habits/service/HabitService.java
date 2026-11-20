@@ -119,8 +119,10 @@ public class HabitService {
                     .habit(habit)
                     .completionDate(today)
                     .build();
+            // IDENTITY id: the INSERT runs here, not at commit, so a concurrent duplicate fails right
+            // here with SQLState 23505 (DataIntegrityViolationException), before the counter and outbox.
             completionRepository.save(completion);
-            
+
             // Increment counter
             habitsCompletedCounter.increment();
             
