@@ -1,0 +1,14 @@
+{
+  "event_id": "0b9d7e3a-1c2f-4a5b-8d6e-7f8091a2b3c4",
+  "event_type": "habit.completed",
+  "event_version": 1,
+  "occurred_at": "2026-11-15T15:13:36.932Z",
+  "aggregate_id": "9",
+  "payload": {
+    "habitId": 9,
+    "userId": 1,
+    "habitName": "Read 20 pages",
+    "completionDate": "2026-11-15",
+    "completedAt": "2026-11-15T15:13:36.932886"
+  }
+}
