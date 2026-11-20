@@ -42,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -104,6 +105,8 @@ class ConcurrentCompletionIT {
 
     @BeforeEach
     void seed() {
+        // The spy bean lives across tests in the cached context: start each test with no recorded writes.
+        clearInvocations(spiedOutboxWriter());
         when(authServiceClient.validateToken(anyString()))
                 .thenReturn(UserValidationResponse.builder().valid(true).userId(USER_ID).build());
         jdbc.execute("TRUNCATE habit_completions, outbox_events, habits RESTART IDENTITY CASCADE");
@@ -113,8 +116,10 @@ class ConcurrentCompletionIT {
     }
 
     @AfterEach
-    void shutdown() {
+    void shutdown() throws InterruptedException {
         executor.shutdownNow();
+        assertThat(executor.awaitTermination(TIMEOUT.toSeconds(), TimeUnit.SECONDS))
+                .as("race threads terminated").isTrue();
     }
 
     @Test

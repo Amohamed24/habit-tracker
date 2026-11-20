@@ -34,9 +34,9 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleDataIntegrityViolation(
             DataIntegrityViolationException ex, HandlerMethod handlerMethod) {
         String sqlState = sqlState(ex);
-        log.warn("Data integrity violation (SQLState {}) in {}", sqlState,
-                handlerMethod == null ? "unknown handler" : handlerMethod.getShortLogMessage(), ex);
+        log.warn("Data integrity violation (SQLState {}) in {}", sqlState, handlerMethod.getShortLogMessage(), ex);
 
+        // Any 23505 inside toggleCompletion maps here, even a theoretical outbox_events PK collision (R2 rework).
         if (UNIQUE_VIOLATION.equals(sqlState) && isToggleCompletion(handlerMethod)) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Map.of("error", "COMPLETION_CONFLICT", "completedToday", true));
@@ -79,8 +79,7 @@ public class GlobalExceptionHandler {
     }
 
     private static boolean isToggleCompletion(HandlerMethod handlerMethod) {
-        return handlerMethod != null
-                && HabitController.class.isAssignableFrom(handlerMethod.getBeanType())
+        return HabitController.class.isAssignableFrom(handlerMethod.getBeanType())
                 && "toggleCompletion".equals(handlerMethod.getMethod().getName());
     }
 }
