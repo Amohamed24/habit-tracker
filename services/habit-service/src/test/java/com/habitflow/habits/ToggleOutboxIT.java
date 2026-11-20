@@ -183,9 +183,9 @@ class ToggleOutboxIT {
         habitService.toggleCompletion(habitId, USER_ID);
         Duration elapsed = Duration.ofNanos(System.nanoTime() - start);
 
-        // Printed for the PR evidence: the AC is < 1 s; the assertion allows 2 s so CI jitter can't flake it.
+        // Printed for the PR evidence; the assertion is the Jira AC (< 1 s).
         System.out.println("toggle_withKafkaUnreachable elapsed_ms=" + elapsed.toMillis());
-        assertThat(elapsed).isLessThan(Duration.ofSeconds(2));
+        assertThat(elapsed).isLessThan(Duration.ofSeconds(1));
         verifyNoInteractions(kafkaTemplate);
         assertThat(outboxRows()).hasSize(1);
     }
