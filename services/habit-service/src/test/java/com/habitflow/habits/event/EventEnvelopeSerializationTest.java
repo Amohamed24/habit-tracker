@@ -9,7 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.json.JsonTest;
 
 import java.io.IOException;
-import java.nio.file.Path;
+import java.io.InputStream;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -27,8 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @JsonTest
 class EventEnvelopeSerializationTest {
 
-    // Surefire runs with the module directory (services/habit-service) as the working directory.
-    private static final Path FIXTURES = Path.of("../../docs/events");
+    // docs/events/ (repo root) is a test resource directory (pom.xml), copied to events/ on the test classpath.
+    private static final String FIXTURES = "/events/";
 
     private static final Pattern UUID_PATTERN =
             Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
@@ -60,6 +60,19 @@ class EventEnvelopeSerializationTest {
         assertThat(withoutVolatile(actual)).isEqualTo(withoutVolatile(fixture));
         assertVolatileFormats(actual, "completedAt");
         assertVolatileFormats(fixture, "completedAt");
+    }
+
+    @Test
+    void habitCompletionUndone_matchesFixtureShape() throws IOException {
+        JsonNode actual = tree(EventEnvelope.v1("habit.completion_undone", "9", undone()));
+        JsonNode fixture = fixture("habit.completion_undone.v1.json");
+
+        assertSameShape(actual, fixture, "$");
+        assertThat(withoutVolatile(actual)).isEqualTo(withoutVolatile(fixture));
+        assertThat(actual.get("event_id").asText()).matches(UUID_PATTERN);
+        assertThat(actual.get("occurred_at").asText()).matches(ISO_UTC_MILLIS);
+        assertThat(fixture.get("occurred_at").asText()).matches(ISO_UTC_MILLIS);
+        assertThat(actual.get("payload").get("completionDate").isTextual()).isTrue();
     }
 
     @Test
@@ -152,12 +165,23 @@ class EventEnvelopeSerializationTest {
                 .build();
     }
 
+    private static HabitCompletionUndoneEvent undone() {
+        return HabitCompletionUndoneEvent.builder()
+                .habitId(9L)
+                .userId(1L)
+                .completionDate(LocalDate.of(2026, 11, 15))
+                .build();
+    }
+
     private JsonNode tree(Object value) throws IOException {
         return objectMapper.readTree(objectMapper.writeValueAsString(value));
     }
 
     private JsonNode fixture(String name) throws IOException {
-        return objectMapper.readTree(FIXTURES.resolve(name).toFile());
+        try (InputStream in = getClass().getResourceAsStream(FIXTURES + name)) {
+            assertThat(in).as("fixture %s on the test classpath", FIXTURES + name).isNotNull();
+            return objectMapper.readTree(in);
+        }
     }
 
     /** A copy without event_id, occurred_at and the payload's createdAt/completedAt. */

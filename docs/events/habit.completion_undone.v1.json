@@ -1,0 +1,12 @@
+{
+  "event_id": "5e2c4b1a-9d3f-4e7a-b6c8-1a2b3c4d5e6f",
+  "event_type": "habit.completion_undone",
+  "event_version": 1,
+  "occurred_at": "2026-11-15T18:02:11.407Z",
+  "aggregate_id": "9",
+  "payload": {
+    "habitId": 9,
+    "userId": 1,
+    "completionDate": "2026-11-15"
+  }
+}
