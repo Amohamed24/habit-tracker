@@ -33,8 +33,14 @@ import java.util.concurrent.TimeoutException;
  * application.yml (max.block.ms, delivery.timeout.ms) plus {@code outbox.send-timeout-ms}, all below the
  * 30 s transaction timeout.
  *
- * <p>A failed or un-acked row is left exactly as it was (sent_at NULL) and is retried on the next poll.
- * Attempts, last_error and backoff are R1-07 (HF-13).
+ * <p>Failure handling (R1-07 / HF-13): a row whose future failed, or that had no ack by the deadline, stays
+ * unsent and gets attempts + 1, last_error and next_attempt_at = DB time + {@link OutboxBackoff} delay, in one
+ * UPDATE in this same transaction. After a synchronous {@code send()} failure the rows not yet attempted are
+ * backed off too ("not attempted: ..."), so a dead broker costs one max.block.ms per backoff step, not one
+ * per poll; for those rows attempts counts failing batches, not sends. Acked rows are still marked sent.
+ *
+ * <p>last_error holds only the root cause's class name and message, truncated to
+ * {@value #LAST_ERROR_MAX_CHARS} characters: never the payload, headers or producer config.
  */
 @Component
 @Slf4j
@@ -46,15 +52,19 @@ public class OutboxPublisher {
     static final String HEADER_EVENT_VERSION = "event_version";
     static final String HEADER_EVENT_ID = "event_id";
 
+    static final int LAST_ERROR_MAX_CHARS = 1000;
+
     private final OutboxStore store;
     // Values are the stored JSON text (StringSerializer), so no __TypeId__ header is added.
     private final KafkaTemplate<String, String> kafkaTemplate;
+    private final OutboxBackoff backoff;
     private final long sendTimeoutMs;
 
-    public OutboxPublisher(OutboxStore store, KafkaTemplate<String, String> kafkaTemplate,
+    public OutboxPublisher(OutboxStore store, KafkaTemplate<String, String> kafkaTemplate, OutboxBackoff backoff,
                            @Value("${outbox.send-timeout-ms:20000}") long sendTimeoutMs) {
         this.store = store;
         this.kafkaTemplate = kafkaTemplate;
+        this.backoff = backoff;
         this.sendTimeoutMs = sendTimeoutMs;
     }
 
@@ -67,14 +77,22 @@ public class OutboxPublisher {
         }
 
         Map<OutboxRow, CompletableFuture<SendResult<String, String>>> inFlight = new LinkedHashMap<>();
-        for (OutboxRow row : rows) {
+        List<OutboxStore.Failure> failed = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            OutboxRow row = rows.get(i);
             try {
                 inFlight.put(row, kafkaTemplate.send(toRecord(row)));
             } catch (RuntimeException e) {
                 // Synchronous failure (e.g. metadata not available within max.block.ms): stop here so a dead
-                // broker costs one max.block.ms per batch, not one per row. The rest stay unsent for the next poll.
-                log.warn("Send failed event_type={} event_id={} aggregate_id={}; stopping batch, {} row(s) left unsent: {}",
-                        row.eventType(), row.id(), row.aggregateId(), rows.size() - inFlight.size(), e.toString());
+                // broker costs one max.block.ms per batch, not one per row. This row and the ones not yet
+                // attempted all back off.
+                String cause = describe(e);
+                log.warn("Send failed event_type={} event_id={} aggregate_id={}; stopping batch, backing off {} row(s): {}",
+                        row.eventType(), row.id(), row.aggregateId(), rows.size() - i, cause);
+                failed.add(failure(row, cause));
+                for (OutboxRow notAttempted : rows.subList(i + 1, rows.size())) {
+                    failed.add(failure(notAttempted, "not attempted: " + cause));
+                }
                 break;
             }
         }
@@ -90,12 +108,17 @@ public class OutboxPublisher {
                 log.info("Published {} event_id={} aggregate_id={} partition={} offset={}",
                         row.eventType(), row.id(), row.aggregateId(), meta.partition(), meta.offset());
             } catch (TimeoutException e) {
-                log.warn("No ack within {} ms event_type={} event_id={} aggregate_id={}; left unsent",
+                log.warn("No ack within {} ms event_type={} event_id={} aggregate_id={}; backing off",
                         sendTimeoutMs, row.eventType(), row.id(), row.aggregateId());
+                failed.add(failure(row, TimeoutException.class.getName() + ": no ack within " + sendTimeoutMs + " ms"));
             } catch (ExecutionException e) {
-                log.warn("Publish failed event_type={} event_id={} aggregate_id={}; left unsent: {}",
-                        row.eventType(), row.id(), row.aggregateId(), String.valueOf(e.getCause()));
+                String cause = describe(e.getCause() == null ? e : e.getCause());
+                log.warn("Publish failed event_type={} event_id={} aggregate_id={}; backing off: {}",
+                        row.eventType(), row.id(), row.aggregateId(), cause);
+                failed.add(failure(row, cause));
             } catch (InterruptedException e) {
+                // Shutting down: the rows not awaited may well have been sent, so they are left untouched
+                // (re-claimed later, de-duplicated downstream) rather than backed off.
                 Thread.currentThread().interrupt();
                 log.warn("Interrupted waiting for acks; marking the {} acked row(s) and leaving the rest unsent",
                         acked.size());
@@ -104,7 +127,34 @@ public class OutboxPublisher {
         }
 
         store.markSent(acked);
+        store.markFailed(failed);
         return acked.size();
+    }
+
+    private OutboxStore.Failure failure(OutboxRow row, String lastError) {
+        return new OutboxStore.Failure(row.id(), truncate(lastError), backoff.delayMillis(row.attempts() + 1));
+    }
+
+    /** Root cause's fully qualified class name and message only (the name tells the two TimeoutExceptions apart). */
+    static String describe(Throwable t) {
+        Throwable root = t;
+        for (int depth = 0; root.getCause() != null && root.getCause() != root && depth < 32; depth++) {
+            root = root.getCause();
+        }
+        String message = root.getMessage();
+        return message == null ? root.getClass().getName() : root.getClass().getName() + ": " + message;
+    }
+
+    /** At most {@value #LAST_ERROR_MAX_CHARS} chars, never ending on half a surrogate pair. */
+    static String truncate(String s) {
+        if (s.length() <= LAST_ERROR_MAX_CHARS) {
+            return s;
+        }
+        int end = LAST_ERROR_MAX_CHARS;
+        if (Character.isHighSurrogate(s.charAt(end - 1))) {
+            end--;
+        }
+        return s.substring(0, end);
     }
 
     private static ProducerRecord<String, String> toRecord(OutboxRow row) {

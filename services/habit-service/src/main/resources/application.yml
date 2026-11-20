@@ -28,6 +28,9 @@ spring:
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
       # Explicit (R1-06a): these bound how long the outbox publisher holds row locks while sending.
       acks: all
+      # Explicit (R1-07): the kafka-clients default (MAX_INT). delivery.timeout.ms is the real limit on
+      # producer retries; after it the future fails and the outbox row backs off (OutboxBackoff).
+      retries: 2147483647
       properties:
         enable.idempotence: true
         max.block.ms: 5000
