@@ -7,7 +7,6 @@ import com.habitflow.habits.entity.HabitCompletion;
 import com.habitflow.habits.event.HabitCompletedEvent;
 import com.habitflow.habits.event.HabitCompletionUndoneEvent;
 import com.habitflow.habits.event.HabitCreatedEvent;
-import com.habitflow.habits.event.KafkaProducer;
 import com.habitflow.habits.outbox.OutboxWriter;
 import com.habitflow.habits.repository.HabitCompletionRepository;
 import com.habitflow.habits.repository.HabitRepository;
@@ -26,12 +25,12 @@ import java.util.stream.Collectors;
 public class HabitService {
 
     static final String AGGREGATE_HABIT = "habit";
+    static final String HABIT_CREATED = "habit.created";
     static final String HABIT_COMPLETED = "habit.completed";
     static final String HABIT_COMPLETION_UNDONE = "habit.completion_undone";
     
     private final HabitRepository habitRepository;
     private final HabitCompletionRepository completionRepository;
-    private final KafkaProducer kafkaProducer;
     private final OutboxWriter outboxWriter;
     private final Counter habitsCreatedCounter;
     private final Counter habitsCompletedCounter;
@@ -49,6 +48,7 @@ public class HabitService {
         return mapToResponse(habit);
     }
     
+    @Transactional
     public HabitResponse createHabit(HabitRequest request, Long userId) {
         Habit habit = Habit.builder()
                 .name(request.getName())
@@ -56,21 +56,23 @@ public class HabitService {
                 .frequency(request.getFrequency())
                 .userId(userId)
                 .build();
-        
+
+        // IDENTITY id: the INSERT runs here, so the id is known before the outbox write.
         habit = habitRepository.save(habit);
-        
+
         // Increment counter
         habitsCreatedCounter.increment();
-        
-        // Publish event to Kafka
-        kafkaProducer.sendHabitCreatedEvent(HabitCreatedEvent.builder()
-                .habitId(habit.getId())
-                .userId(userId)
-                .habitName(habit.getName())
-                .frequency(habit.getFrequency())
-                .createdAt(LocalDateTime.now())
-                .build());
-        
+
+        // Same transaction as the habit row: both commit or neither does (no Kafka call here).
+        outboxWriter.write(AGGREGATE_HABIT, habit.getId().toString(), HABIT_CREATED,
+                HabitCreatedEvent.builder()
+                        .habitId(habit.getId())
+                        .userId(userId)
+                        .habitName(habit.getName())
+                        .frequency(habit.getFrequency())
+                        .createdAt(LocalDateTime.now())
+                        .build());
+
         return mapToResponse(habit);
     }
     
