@@ -131,10 +131,15 @@ class BrokerOutageProofIT {
         Instant tAllFailed;
         Instant tUnpause;
         long maxOpMs = 0;
-        // 1. Pause the broker. Unpause in finally so a failed assertion never leaves it frozen.
-        kafka.getDockerClient().pauseContainerCmd(containerId).exec();
-        tPause = dbNow();
+        // tPause and tUnpause are read after each docker command returns. The broker was already frozen
+        // before tPause was read, so the measured pause can be slightly short (the error is one command
+        // round-trip plus one SELECT, milliseconds against the 15 s budget).
+        Throwable inFlight = null;
         try {
+            // 1. Pause the broker. Inside the try, so finally always unpauses, even if this call or dbNow() fails.
+            kafka.getDockerClient().pauseContainerCmd(containerId).exec();
+            tPause = dbNow();
+
             // 2. 50 operations through HabitService, each timed on the DB clock (the SELECTs count against it).
             for (int i = 0; i < HABITS; i++) {
                 Instant t0 = dbNow();
@@ -155,11 +160,24 @@ class BrokerOutageProofIT {
                             WHERE sent_at IS NULL AND attempts >= 1 AND last_error IS NOT NULL AND id <> ALL(?::uuid[])
                             """, Integer.class, (Object) uuidArray(warmUpIds)) == 2 * HABITS);
             tAllFailed = dbNow();
+        } catch (Throwable t) {
+            inFlight = t;
+            throw t;
         } finally {
-            // 4. Unpause.
-            kafka.getDockerClient().unpauseContainerCmd(containerId).exec();
+            // 4. Unpause. An unpause failure must not hide the failure that got us here: attach it to that one
+            // as suppressed, and only throw it on its own when the try block succeeded.
+            try {
+                kafka.getDockerClient().unpauseContainerCmd(containerId).exec();
+            } catch (RuntimeException unpauseFailure) {
+                if (inFlight == null) {
+                    throw unpauseFailure;
+                }
+                inFlight.addSuppressed(unpauseFailure);
+            }
         }
         tUnpause = dbNow();
+        // One 60 s delivery window from the unpause (DB clock), shared by the consume wait and the sent_at wait.
+        Instant deliveryDeadline = tUnpause.plus(DELIVERY_WINDOW);
 
         assertThat(maxOpMs).as("slowest operation while paused (ms)").isLessThan(MAX_OP_MS);
         assertThat(millis(tPause, tUnpause)).as("pause length on the DB clock (ms)").isLessThan(MAX_PAUSE_MS);
@@ -179,10 +197,11 @@ class BrokerOutageProofIT {
         // 5. Within 60 s of the unpause, all 50 event_ids are on habit-events ...
         Set<String> expected = outageIds.stream().map(UUID::toString).collect(Collectors.toSet());
         Set<String> seen = new HashSet<>();
-        int recordsForOutageIds = consumeUntilAllSeen(expected, seen);
+        int recordsForOutageIds = consumeUntilAllSeen(expected, seen, remainingUntil(deliveryDeadline));
 
         // 6. ... and every row has sent_at (the publisher commits after the acks, so the rows may trail the records).
-        await("all outage rows marked sent").atMost(DELIVERY_WINDOW).pollInterval(Duration.ofMillis(100))
+        await("all outage rows marked sent").atMost(remainingUntil(deliveryDeadline))
+                .pollInterval(Duration.ofMillis(100))
                 .until(() -> unsent() == 0);
         Instant tAllDelivered = jdbc.queryForObject(
                 "SELECT max(sent_at) FROM outbox_events WHERE id <> ALL(?::uuid[])", Timestamp.class,
@@ -202,7 +221,7 @@ class BrokerOutageProofIT {
     }
 
     /** Polls habit-events from the start; returns how many records carried one of the expected event_ids. */
-    private int consumeUntilAllSeen(Set<String> expected, Set<String> seen) {
+    private int consumeUntilAllSeen(Set<String> expected, Set<String> seen, Duration atMost) {
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "broker-outage-proof-it-" + UUID.randomUUID());
@@ -212,7 +231,7 @@ class BrokerOutageProofIT {
         int[] records = {0};
         try (KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props)) {
             consumer.subscribe(List.of(KafkaConfig.HABIT_EVENTS_TOPIC));
-            await("all 50 event_ids consumed").atMost(DELIVERY_WINDOW).pollInSameThread()
+            await("all 50 event_ids consumed").atMost(atMost).pollInSameThread()
                     .pollInterval(Duration.ofMillis(50))
                     .until(() -> {
                         for (ConsumerRecord<String, String> r : consumer.poll(Duration.ofMillis(250))) {
@@ -226,6 +245,15 @@ class BrokerOutageProofIT {
                     });
         }
         return records[0];
+    }
+
+    /**
+     * Time left until {@code deadline}, on the DB clock. At least 1 ms, because Awaitility rejects a zero
+     * timeout; a spent window then fails the next wait at once.
+     */
+    private Duration remainingUntil(Instant deadline) {
+        Duration left = Duration.between(dbNow(), deadline);
+        return left.compareTo(Duration.ofMillis(1)) < 0 ? Duration.ofMillis(1) : left;
     }
 
     private int unsent() {
