@@ -144,7 +144,9 @@ class FlywayBaselineIT {
                         "--spring.datasource.username=" + postgres.getUsername(),
                         "--spring.datasource.password=" + postgres.getPassword(),
                         "--spring.kafka.listener.auto-startup=false",
-                        "--spring.kafka.admin.auto-create=false")) {
+                        "--spring.kafka.admin.auto-create=false",
+                        // No outbox poll loop racing these short boots and shutdowns (R1-06a).
+                        "--outbox.publisher.enabled=false")) {
             // started = Flyway migrated and Hibernate validation passed
         }
     }

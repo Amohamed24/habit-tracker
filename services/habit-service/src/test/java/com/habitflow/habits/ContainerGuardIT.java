@@ -89,12 +89,13 @@ class ContainerGuardIT {
 
     /** Overrides go in as command-line args: SpringApplicationBuilder.properties() would lose to application.yml. */
     private static void boot(String... overrides) {
-        String[] args = new String[overrides.length + 4];
+        String[] args = new String[overrides.length + 5];
         System.arraycopy(overrides, 0, args, 0, overrides.length);
         args[overrides.length] = "--spring.datasource.username=" + postgres.getUsername();
         args[overrides.length + 1] = "--spring.datasource.password=" + postgres.getPassword();
         args[overrides.length + 2] = "--spring.kafka.listener.auto-startup=false";
         args[overrides.length + 3] = "--spring.kafka.admin.auto-create=false";
+        args[overrides.length + 4] = "--outbox.publisher.enabled=false";
         try (ConfigurableApplicationContext ignored = new SpringApplicationBuilder(
                 HabitServiceApplication.class, GuardConfig.class)
                 .web(WebApplicationType.NONE)

@@ -54,7 +54,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
         "spring.kafka.bootstrap-servers=localhost:1",
         "spring.kafka.listener.auto-startup=false",
-        "spring.kafka.admin.auto-create=false"
+        "spring.kafka.admin.auto-create=false",
+        "outbox.publisher.enabled=false"
 })
 @Testcontainers
 class ToggleOutboxIT {

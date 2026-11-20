@@ -62,7 +62,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @SpringBootTest(properties = {
         "spring.kafka.bootstrap-servers=localhost:1",
         "spring.kafka.listener.auto-startup=false",
-        "spring.kafka.admin.auto-create=false"
+        "spring.kafka.admin.auto-create=false",
+        "outbox.publisher.enabled=false"
 })
 @AutoConfigureMockMvc
 @Testcontainers
