@@ -434,6 +434,7 @@ FROM outbox_events
 WHERE sent_at IS NULL AND attempts >= 5
 ORDER BY attempts DESC, created_at;
 ```
+A `last_error` starting with `not attempted:` or containing a `TimeoutException` means a broker outage, not a poison row.
 
 Then, depending on the cause:
 ```sql
@@ -444,7 +445,7 @@ UPDATE outbox_events SET next_attempt_at = now() WHERE id = '<id>' AND sent_at I
 UPDATE outbox_events SET sent_at = now(), last_error = 'abandoned manually: <reason>'
 WHERE id = '<id>' AND sent_at IS NULL;
 ```
-Don't delete rows or edit `payload`. Consumers de-duplicate by `event_id`, so republishing a row is safe.
+Don't delete rows or edit `payload`. Consumers will de-duplicate by event_id (R1-10); until then a republished row can be seen twice.
 
 ### Port Already in Use
 ```bash
