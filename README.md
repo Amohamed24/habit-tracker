@@ -99,6 +99,55 @@ A full-stack habit tracking application built with microservices architecture, f
 
 ---
 
+## Reliability (R1 Tier 1)
+
+**The problem.** habit-service used to save to Postgres and then send to Kafka directly (a dual write).
+If Kafka was slow or down, the request stalled or failed, or the row was saved and the event was lost.
+
+### How it works now
+- **Transactional outbox (HF-9, HF-10):** the habit row and its event row in `outbox_events` are written in one Postgres transaction. A request never waits on Kafka.
+- **Event envelope v1 (HF-7):** every event has a writer-assigned `event_id` and an `event_version`, which are also sent as Kafka headers.
+- **Publisher (HF-11):** claims due rows with `FOR UPDATE SKIP LOCKED` (several instances never claim the same row) and sets `sent_at` only after the broker acks.
+- **Retry (HF-13):** a failed row gets exponential backoff with equal jitter, starting at 1–2 s and capped at 5 min. Java computes only the delay; the database clock applies it.
+- **Concurrent completion (HF-14):** two simultaneous completions of the same habit give one success and one clean `409` instead of a 400 that leaked SQL.
+
+```mermaid
+flowchart LR
+    C[Request] --> S[habit-service]
+    S -->|one transaction| P[(Postgres: habit row + outbox row)]
+    P -->|SKIP LOCKED claim| O[Outbox publisher]
+    O -->|send, wait for ack| K[Kafka: habit-events]
+    O -->|ack: set sent_at / fail: backoff| P
+```
+
+### Delivery guarantee
+**At-least-once.** A row whose ack is lost, or that is retried after a timeout, can be published again.
+Consumers are meant to de-duplicate by `event_id` (R1-10). **That is not built yet**, so for now a consumer can see an event twice.
+
+### Proof: `BrokerOutageProofIT` (HF-23)
+With Testcontainers Postgres and Kafka, the test pauses the broker (`docker pause`), runs 50 writes
+(25 creates + 25 completions), checks that every row failed at least once, unpauses, then consumes `habit-events`.
+- **Writes stay fast during the outage:** the test asserts the slowest write is under 1 s. Measured slowest write: 7–24 ms.
+- **Nothing is lost:** all 50 `event_id`s must be consumed and every row marked sent within 60 s of the unpause. Measured: 50/50, in about 1.9 s.
+- **Duplicates are reported, not hidden:** the test logs how many extra records it saw (1–14 so far). They are not asserted, which matches at-least-once.
+
+Measured values come from local and CI runs of the test on main. Only the bounds are asserted.
+
+### Running the tests
+Requires JDK 21 and a running Docker daemon (Testcontainers starts Postgres and Kafka).
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)   # macOS; any JDK 21 works
+cd services/habit-service
+./mvnw -B verify
+```
+On main this runs 30 unit tests (surefire) and 32 integration tests (failsafe). Classes named `*IT` run only under
+failsafe, during `verify`, not `test`. The integration tests use a Testcontainers-only guard that refuses to boot
+against a database URL that isn't the test container (proven by `ContainerGuardIT`).
+
+**Operating the outbox:** see [Outbox: rows that keep failing](#outbox-rows-that-keep-failing).
+
+---
+
 ## Monitoring
 
 ### Custom Metrics
