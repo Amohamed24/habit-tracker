@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.SplittableRandom;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Delay only (R1-07 / HF-13); next_attempt_at itself is DB time + this delay, see OutboxStore.markFailed. */
 class OutboxBackoffTest {
@@ -42,6 +43,23 @@ class OutboxBackoffTest {
         assertThat(full.delayMillis(0)).isEqualTo(2_000);
         assertThat(full.delayMillis(-1)).isEqualTo(2_000);
         assertThat(full.delayMillis(Integer.MIN_VALUE)).isEqualTo(2_000);
+    }
+
+    @Test
+    void customCap_boundsDelayFromFirstFailure_withoutOverflow() {
+        // outbox.backoff.max-ms=2000 (HF-23's BrokerOutageProofIT): every attempt is 1-2 s.
+        OutboxBackoff full = new OutboxBackoff(2_000, () -> FULL);
+        OutboxBackoff none = new OutboxBackoff(2_000, () -> NONE);
+        for (int attempts : new int[] {1, 2, 9, 64, Integer.MAX_VALUE}) {
+            assertThat(full.delayMillis(attempts)).as("attempts=%d", attempts).isEqualTo(2_000);
+            assertThat(none.delayMillis(attempts)).as("attempts=%d", attempts).isEqualTo(1_000);
+        }
+        // A cap above 2^53 s can't overflow the shift either.
+        assertThat(new OutboxBackoff(Long.MAX_VALUE, () -> FULL).delayMillis(Integer.MAX_VALUE))
+                .isEqualTo(1_000L << OutboxBackoff.SHIFT_LIMIT);
+        // The default constructor keeps the 5 min cap.
+        assertThat(new OutboxBackoff(() -> FULL).delayMillis(100)).isEqualTo(300_000);
+        assertThatThrownBy(() -> new OutboxBackoff(0, () -> FULL)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
