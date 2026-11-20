@@ -15,7 +15,6 @@ import org.springframework.kafka.core.KafkaTemplate;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -61,20 +60,8 @@ class KafkaProducerTest {
     }
 
     @Test
-    void habitCompleted_keyHeadersAndNoTypeId() throws IOException {
-        producer.sendHabitCompletedEvent(completed());
-
-        ProducerRecord<String, String> record = sent(1).get(0);
-        assertThat(record.topic()).isEqualTo("habit-events");
-        assertThat(record.key()).isEqualTo("9");
-        assertHeaders(record, "habit.completed");
-        assertThat(body(record).get("event_type").asText()).isEqualTo("habit.completed");
-        assertThat(body(record).get("payload").get("completionDate").asText()).isEqualTo("2026-11-15");
-    }
-
-    @Test
     void eventIdHeader_matchesBody() throws IOException {
-        producer.sendHabitCompletedEvent(completed());
+        producer.sendHabitCreatedEvent(created());
 
         ProducerRecord<String, String> record = sent(1).get(0);
         JsonNode body = body(record);
@@ -85,8 +72,8 @@ class KafkaProducerTest {
 
     @Test
     void eventId_uniquePerSend() throws IOException {
-        producer.sendHabitCompletedEvent(completed());
-        producer.sendHabitCompletedEvent(completed());
+        producer.sendHabitCreatedEvent(created());
+        producer.sendHabitCreatedEvent(created());
 
         List<ProducerRecord<String, String>> records = sent(2);
         String first = header(records.get(0).headers(), "event_id");
@@ -142,14 +129,6 @@ class KafkaProducerTest {
         return HabitCreatedEvent.builder()
                 .habitId(9L).userId(1L).habitName("Read 20 pages").frequency("DAILY")
                 .createdAt(LocalDateTime.of(2026, 11, 15, 15, 13, 36))
-                .build();
-    }
-
-    private static HabitCompletedEvent completed() {
-        return HabitCompletedEvent.builder()
-                .habitId(9L).userId(1L).habitName("Read 20 pages")
-                .completionDate(LocalDate.of(2026, 11, 15))
-                .completedAt(LocalDateTime.of(2026, 11, 15, 15, 13, 36))
                 .build();
     }
 }

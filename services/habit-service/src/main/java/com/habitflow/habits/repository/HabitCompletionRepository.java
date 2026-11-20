@@ -2,6 +2,9 @@ package com.habitflow.habits.repository;
 
 import com.habitflow.habits.entity.HabitCompletion;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
@@ -13,5 +16,8 @@ public interface HabitCompletionRepository extends JpaRepository<HabitCompletion
     List<HabitCompletion> findByHabitId(Long habitId);
     Optional<HabitCompletion> findByHabitIdAndCompletionDate(Long habitId, LocalDate date);
     boolean existsByHabitIdAndCompletionDate(Long habitId, LocalDate date);
-    void deleteByHabitIdAndCompletionDate(Long habitId, LocalDate date);
+    /** Bulk delete; returns the number of rows removed (0 if another request already removed it). */
+    @Modifying
+    @Query("delete from HabitCompletion c where c.habit.id = :habitId and c.completionDate = :date")
+    int deleteByHabitIdAndCompletionDate(@Param("habitId") Long habitId, @Param("date") LocalDate date);
 }

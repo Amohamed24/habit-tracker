@@ -5,14 +5,16 @@ import com.habitflow.habits.dto.HabitResponse;
 import com.habitflow.habits.entity.Habit;
 import com.habitflow.habits.entity.HabitCompletion;
 import com.habitflow.habits.event.HabitCompletedEvent;
+import com.habitflow.habits.event.HabitCompletionUndoneEvent;
 import com.habitflow.habits.event.HabitCreatedEvent;
 import com.habitflow.habits.event.KafkaProducer;
+import com.habitflow.habits.outbox.OutboxWriter;
 import com.habitflow.habits.repository.HabitCompletionRepository;
 import com.habitflow.habits.repository.HabitRepository;
 import io.micrometer.core.instrument.Counter;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -22,10 +24,15 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class HabitService {
+
+    static final String AGGREGATE_HABIT = "habit";
+    static final String HABIT_COMPLETED = "habit.completed";
+    static final String HABIT_COMPLETION_UNDONE = "habit.completion_undone";
     
     private final HabitRepository habitRepository;
     private final HabitCompletionRepository completionRepository;
     private final KafkaProducer kafkaProducer;
+    private final OutboxWriter outboxWriter;
     private final Counter habitsCreatedCounter;
     private final Counter habitsCompletedCounter;
     private final Counter habitsDeletedCounter;
@@ -97,7 +104,16 @@ public class HabitService {
         boolean completedToday = completionRepository.existsByHabitIdAndCompletionDate(id, today);
         
         if (completedToday) {
-            completionRepository.deleteByHabitIdAndCompletionDate(id, today);
+            int deleted = completionRepository.deleteByHabitIdAndCompletionDate(id, today);
+            // Only an actual removal is an event; 0 means another request already undid it.
+            if (deleted == 1) {
+                outboxWriter.write(AGGREGATE_HABIT, habit.getId().toString(), HABIT_COMPLETION_UNDONE,
+                        HabitCompletionUndoneEvent.builder()
+                                .habitId(habit.getId())
+                                .userId(userId)
+                                .completionDate(today)
+                                .build());
+            }
         } else {
             HabitCompletion completion = HabitCompletion.builder()
                     .habit(habit)
@@ -108,14 +124,15 @@ public class HabitService {
             // Increment counter
             habitsCompletedCounter.increment();
             
-            // Publish event to Kafka
-            kafkaProducer.sendHabitCompletedEvent(HabitCompletedEvent.builder()
-                    .habitId(habit.getId())
-                    .userId(userId)
-                    .habitName(habit.getName())
-                    .completionDate(today)
-                    .completedAt(LocalDateTime.now())
-                    .build());
+            // Same transaction as the completion row: both commit or neither does (no Kafka call here).
+            outboxWriter.write(AGGREGATE_HABIT, habit.getId().toString(), HABIT_COMPLETED,
+                    HabitCompletedEvent.builder()
+                            .habitId(habit.getId())
+                            .userId(userId)
+                            .habitName(habit.getName())
+                            .completionDate(today)
+                            .completedAt(LocalDateTime.now())
+                            .build());
         }
         
         return mapToResponse(habit);

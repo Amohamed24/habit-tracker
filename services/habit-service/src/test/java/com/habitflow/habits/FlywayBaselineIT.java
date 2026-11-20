@@ -1,5 +1,6 @@
 package com.habitflow.habits;
 
+import com.habitflow.habits.support.TestcontainersOnly;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -21,7 +22,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Proves the V1 baseline in every starting state the habitflow database can be in.
+ * Proves the V1 baseline (and that V2 applies after it) in every starting state the habitflow database can be in.
  *
  * <p>Flyway runs at startup, so each scenario gets its own database, sets up its starting
  * state with plain JDBC, and then boots the real {@link HabitServiceApplication} against it.
@@ -71,7 +72,7 @@ class FlywayBaselineIT {
 
         boot(db);
 
-        assertThat(history(db)).containsExactly("1|SQL|true");
+        assertThat(history(db)).containsExactly("1|SQL|true", "2|SQL|true");
         assertHabitTablesWithOneUniqueAndOneFk(db, null, null);
     }
 
@@ -83,7 +84,7 @@ class FlywayBaselineIT {
 
         boot(db);
 
-        assertThat(history(db)).containsExactly("0|BASELINE|true", "1|SQL|true");
+        assertThat(history(db)).containsExactly("0|BASELINE|true", "1|SQL|true", "2|SQL|true");
         assertHabitTablesWithOneUniqueAndOneFk(db, null, null);
         assertThat(usersSnapshot(db)).isEqualTo(usersBefore);
     }
@@ -97,7 +98,7 @@ class FlywayBaselineIT {
 
         boot(db);
 
-        assertThat(history(db)).containsExactly("0|BASELINE|true", "1|SQL|true");
+        assertThat(history(db)).containsExactly("0|BASELINE|true", "1|SQL|true", "2|SQL|true");
         assertThat(query(db, "SELECT count(*) FROM habits")).containsExactly("2");
         assertThat(query(db, "SELECT count(*) FROM habit_completions")).containsExactly("3");
         assertHabitTablesWithOneUniqueAndOneFk(db, "uk1jmmm9bn1u8tqv76tvux1htde", "fkdt8vmlabmctme9yn5fbnp9ipf");
@@ -150,8 +151,8 @@ class FlywayBaselineIT {
 
     /**
      * Pre-boot guard: once the environment is resolved (all property sources, application.yml included)
-     * and before any bean exists (no Hikari pool, no Flyway), abort unless spring.datasource.url is
-     * exactly this scenario's Testcontainers database.
+     * and before any bean exists (no Hikari pool, no Flyway), run the shared Testcontainers-only check
+     * (datasource URL is this scenario's container database, spring.flyway.url unset).
      */
     private static final class TestcontainersOnlyGuard implements ApplicationListener<ApplicationEnvironmentPreparedEvent> {
         private final String expectedUrl;
@@ -162,11 +163,7 @@ class FlywayBaselineIT {
 
         @Override
         public void onApplicationEvent(ApplicationEnvironmentPreparedEvent event) {
-            String resolved = event.getEnvironment().getProperty("spring.datasource.url");
-            if (!expectedUrl.equals(resolved)) {
-                throw new IllegalStateException("FlywayBaselineIT guard: refusing to boot, spring.datasource.url resolved to ["
-                        + resolved + "] but this test may only use the Testcontainers database [" + expectedUrl + "]");
-            }
+            TestcontainersOnly.assertTestcontainersOnly(event.getEnvironment(), expectedUrl);
         }
     }
 

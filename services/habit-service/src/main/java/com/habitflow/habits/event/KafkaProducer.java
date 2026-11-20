@@ -17,7 +17,6 @@ public class KafkaProducer {
 
     static final String HABIT_EVENTS_TOPIC = "habit-events";
     static final String HABIT_CREATED = "habit.created";
-    static final String HABIT_COMPLETED = "habit.completed";
 
     static final String HEADER_EVENT_TYPE = "event_type";
     static final String HEADER_EVENT_VERSION = "event_version";
@@ -30,10 +29,6 @@ public class KafkaProducer {
 
     public void sendHabitCreatedEvent(HabitCreatedEvent event) {
         send(HABIT_CREATED, event.getHabitId(), event);
-    }
-
-    public void sendHabitCompletedEvent(HabitCompletedEvent event) {
-        send(HABIT_COMPLETED, event.getHabitId(), event);
     }
 
     private void send(String eventType, Long habitId, Object payload) {
@@ -56,7 +51,7 @@ public class KafkaProducer {
 
         log.info("Sending {} event_id={} aggregate_id={}: {}",
                 eventType, envelope.eventId(), envelope.aggregateId(), payload);
-        // Still fire-and-forget (L3); delivery guarantees come with the outbox (R1-05a/06a).
+        // Still fire-and-forget (L3); completions now go through the outbox (R1-05a); createHabit follows in R1-05b.
         kafkaTemplate.send(record);
     }
 
