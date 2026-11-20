@@ -17,6 +17,8 @@ import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -55,6 +57,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
@@ -82,6 +85,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 })
 @DirtiesContext
 class OutboxPublisherIT {
+
+    private static final Logger log = LoggerFactory.getLogger(OutboxPublisherIT.class);
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
@@ -208,11 +213,26 @@ class OutboxPublisherIT {
         int sent = publisher.publishBatch();
         Duration elapsed = Duration.ofNanos(System.nanoTime() - start);
 
-        // Printed for the PR evidence: the wait ends at outbox.send-timeout-ms (2 s here), not later.
-        System.out.println("unackedSend elapsed_ms=" + elapsed.toMillis());
+        // Logged for the PR evidence: the wait ends at outbox.send-timeout-ms (2 s here), not later.
+        log.info("unackedSend elapsed_ms={}", elapsed.toMillis());
         assertThat(sent).isZero();
         assertThat(elapsed).isLessThan(Duration.ofSeconds(4));
         assertThat(sentAt(eventId)).isNull();
+    }
+
+    @Test
+    void syncSendFailure_stopsBatch_rowsStayUnsent() {
+        UUID first = write("habit.completed");
+        UUID second = write("habit.completion_undone");
+        // A synchronous throw from send() (e.g. metadata not available within max.block.ms) ends the batch.
+        doThrow(new KafkaException("metadata not available"))
+                .when(template()).send(argThat(isEvent(first)));
+
+        assertThat(publisher.publishBatch()).isZero();
+
+        verify(template(), times(1)).send(any(ProducerRecord.class));
+        assertThat(sentAt(first)).isNull();
+        assertThat(sentAt(second)).as("never attempted: left for the next poll").isNull();
     }
 
     // --- helpers -------------------------------------------------------------------------------

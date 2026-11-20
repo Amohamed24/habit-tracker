@@ -1,15 +1,13 @@
 package com.habitflow.habits.config;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * Turns on @Scheduled processing for the outbox publisher. Kept off the application class so tests
- * (and operators) can switch the poll loop off with {@code outbox.publisher.enabled=false}.
+ * Turns on @Scheduled processing. Kept off the application class; whether the outbox poll loop runs is
+ * decided by {@code outbox.publisher.enabled} on {@link com.habitflow.habits.outbox.OutboxPublisherScheduler}.
  */
 @Configuration
 @EnableScheduling
-@ConditionalOnProperty(name = "outbox.publisher.enabled", havingValue = "true", matchIfMissing = true)
 public class SchedulingConfig {
 }
