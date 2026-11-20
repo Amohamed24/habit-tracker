@@ -57,7 +57,12 @@ public class OutboxEvent {
     @Column(name = "attempts", nullable = false)
     private int attempts;
 
-    @Column(name = "next_attempt_at", nullable = false)
+    /**
+     * Set by the database (DEFAULT now()), never by the app: the publisher's claim compares it with
+     * Postgres now(), so an app clock ahead of the DB would otherwise delay every publish by the skew.
+     * Not refreshed after insert, so it reads null on a freshly saved entity.
+     */
+    @Column(name = "next_attempt_at", nullable = false, insertable = false, updatable = false)
     private Instant nextAttemptAt;
 
     @Column(name = "last_error")
@@ -65,8 +70,6 @@ public class OutboxEvent {
 
     @PrePersist
     void onCreate() {
-        Instant now = Instant.now();
-        if (createdAt == null) createdAt = now;
-        if (nextAttemptAt == null) nextAttemptAt = now;
+        if (createdAt == null) createdAt = Instant.now();
     }
 }

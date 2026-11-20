@@ -26,6 +26,13 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # Explicit (R1-06a): these bound how long the outbox publisher holds row locks while sending.
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 5000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 15000
     consumer:
       group-id: habit-service-group
       auto-offset-reset: earliest
@@ -34,6 +41,13 @@ spring:
       properties:
         spring.json.trusted.packages: "*"
         spring.json.type.mapping: userRegistered:com.habitflow.habits.event.UserRegisteredEvent
+
+# Outbox publisher (R1-06a). Switch the poll loop off with OUTBOX_PUBLISHER_ENABLED=false.
+outbox:
+  publisher:
+    enabled: ${OUTBOX_PUBLISHER_ENABLED:true}
+  # One deadline for all acks of a batch; above delivery.timeout.ms, below the 30 s transaction timeout.
+  send-timeout-ms: 20000
 
 server:
   port: 8080
