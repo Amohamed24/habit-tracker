@@ -25,6 +25,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -88,6 +90,7 @@ class CreateHabitOutboxIT {
     void clean() {
         // The spy bean lives across tests in the cached context: start each test with no recorded writes.
         clearInvocations(spiedOutboxWriter());
+        clearInvocations(kafkaTemplate);
         jdbc.execute("TRUNCATE habit_completions, outbox_events, habits RESTART IDENTITY CASCADE");
     }
 
@@ -109,12 +112,16 @@ class CreateHabitOutboxIT {
         // jsonb reorders keys, so compare as JSON trees, never as strings.
         JsonNode envelope = objectMapper.readTree((String) row.get("payload_text"));
         assertThat(envelope.get("event_id").asText()).isEqualTo(row.get("id").toString());
-        JsonNode expected = objectMapper.readTree("""
-                {"event_type": "habit.created", "event_version": 1, "aggregate_id": "%d",
-                 "payload": {"habitId": %d, "userId": %d, "habitName": "Read 20 pages",
-                             "frequency": "DAILY"}}
-                """.formatted(created.getId(), created.getId(), USER_ID));
-        assertThat(withoutVolatile(envelope)).isEqualTo(expected);
+        // Expected shape = the shared contract fixture, with this test's ids in place of the fixture's.
+        ObjectNode expected = (ObjectNode) fixture("habit.created.v1.json");
+        // Ids go in as parsed JSON (IntNode), like the actual tree: put(Long) would make a LongNode,
+        // and IntNode(1) != LongNode(1) in JsonNode.equals.
+        expected.put("aggregate_id", created.getId().toString());
+        ((ObjectNode) expected.get("payload"))
+                .set("habitId", objectMapper.readTree(created.getId().toString()));
+        ((ObjectNode) expected.get("payload"))
+                .set("userId", objectMapper.readTree(String.valueOf(USER_ID)));
+        assertThat(withoutVolatile(envelope)).isEqualTo(withoutVolatile(expected));
         assertThat(envelope.get("payload").get("createdAt").isTextual()).isTrue();
 
         verify(spiedOutboxWriter(), times(1)).write(anyString(), anyString(), anyString(), any());
@@ -153,6 +160,14 @@ class CreateHabitOutboxIT {
     }
 
     // --- helpers -------------------------------------------------------------------------------
+
+    /** A shared contract fixture from docs/events/ (on the test classpath under events/, see pom.xml). */
+    private JsonNode fixture(String name) throws IOException {
+        try (InputStream in = getClass().getResourceAsStream("/events/" + name)) {
+            assertThat(in).as("classpath fixture /events/" + name).isNotNull();
+            return objectMapper.readTree(in);
+        }
+    }
 
     private static HabitRequest request() {
         return new HabitRequest("Read 20 pages", "before bed", "DAILY");

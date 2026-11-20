@@ -36,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
@@ -94,6 +95,8 @@ class ToggleOutboxIT {
 
     @BeforeEach
     void seed() {
+        // The spy bean lives across tests in the cached context: start each test with no recorded calls.
+        clearInvocations(kafkaTemplate);
         jdbc.execute("TRUNCATE outbox_events, habit_completions, habits RESTART IDENTITY CASCADE");
         // Seed through the repository, not createHabit, so the outbox holds only the toggle's events.
         habitId = habitRepository.save(Habit.builder()
