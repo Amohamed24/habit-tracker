@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class OutboxWriter {
 
-    // Boot's ObjectMapper: the same configuration KafkaProducer serializes envelopes with.
+    // Boot's ObjectMapper: JavaTimeModule + WRITE_DATES_AS_TIMESTAMPS=false, so dates are ISO strings.
     private final ObjectMapper objectMapper;
     private final OutboxEventRepository outboxEventRepository;
 

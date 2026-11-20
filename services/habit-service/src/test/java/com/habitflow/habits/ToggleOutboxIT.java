@@ -95,7 +95,7 @@ class ToggleOutboxIT {
     @BeforeEach
     void seed() {
         jdbc.execute("TRUNCATE outbox_events, habit_completions, habits RESTART IDENTITY CASCADE");
-        // Seed through the repository: createHabit still sends to Kafka directly until R1-05b.
+        // Seed through the repository, not createHabit, so the outbox holds only the toggle's events.
         habitId = habitRepository.save(Habit.builder()
                 .name("Read 20 pages").frequency("DAILY").userId(USER_ID).build()).getId();
     }
