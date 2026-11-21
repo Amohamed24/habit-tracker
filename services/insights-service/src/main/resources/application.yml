@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: insights-service
+  datasource:
+    # Its own database (R1-09a). The defaults point at insights-db's host port 5433 on purpose, so a run
+    # without DB_* env vars can never fall back to habit-service's habitflow database on 5432.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:insights}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      # Flyway owns the schema; Hibernate only checks the entities against it.
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    # Same baseline settings as habit-service. The history table is Flyway's default
+    # (flyway_schema_history): this database belongs to insights-service alone.
+    baseline-on-migrate: true
+    baseline-version: 0
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+server:
+  port: 8082
+
+# Actuator and Prometheus
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}

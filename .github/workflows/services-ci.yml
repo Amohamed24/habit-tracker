@@ -21,10 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
-      # One service failing must not cancel the other.
+      # One service failing must not cancel the others.
       fail-fast: false
       matrix:
-        service: [auth-service, habit-service]
+        service: [auth-service, habit-service, insights-service]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
