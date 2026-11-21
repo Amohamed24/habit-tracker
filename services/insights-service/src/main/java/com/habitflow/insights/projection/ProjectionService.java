@@ -48,11 +48,21 @@ public class ProjectionService {
     }
 
     /**
-     * @throws IllegalArgumentException if a counted event lacks payload {@code userId} or {@code completionDate}
-     *                                  (checked before any write)
+     * @throws IllegalArgumentException if {@code consumer}, {@code event_id} or {@code event_type} is null/blank,
+     *                                  or a counted event lacks an integral payload {@code userId} or a valid
+     *                                  {@code completionDate} (all checked before any write)
      */
     @Transactional
     public ApplyResult apply(String consumer, EventEnvelope event) {
+        if (consumer == null || consumer.isBlank()) {
+            throw new IllegalArgumentException("consumer is null or blank");
+        }
+        if (event == null || event.eventId() == null) {
+            throw new IllegalArgumentException("event_id is null");
+        }
+        if (event.eventType() == null || event.eventType().isBlank()) {
+            throw new IllegalArgumentException("event " + event.eventId() + ": event_type is null or blank");
+        }
         int delta = deltaFor(event.eventType());
         long userId = 0;
         LocalDate completionDate = null;
@@ -83,8 +93,13 @@ public class ProjectionService {
 
     private static long requiredUserId(EventEnvelope event) {
         JsonNode node = event.payload() == null ? null : event.payload().get("userId");
-        if (node == null || !node.canConvertToLong()) {
+        if (node == null) {
             throw new IllegalArgumentException(event.eventType() + " " + event.eventId() + ": payload.userId missing");
+        }
+        // isIntegralNumber rejects 1.5 (canConvertToLong alone accepts it and truncates) and "1" (a string).
+        if (!node.isIntegralNumber() || !node.canConvertToLong()) {
+            throw new IllegalArgumentException(
+                    event.eventType() + " " + event.eventId() + ": payload.userId is not an integral long");
         }
         return node.asLong();
     }

@@ -46,6 +46,13 @@ final class ProjectionTestSupport {
         return jdbc.queryForObject("SELECT count(*) FROM daily_completion_counts WHERE user_id = ?", Integer.class, userId);
     }
 
+    /** Rows in processed_events + daily_completion_counts, whoever wrote them. */
+    static int rowsInBothTables(JdbcTemplate jdbc) {
+        return jdbc.queryForObject(
+                "SELECT (SELECT count(*) FROM processed_events) + (SELECT count(*) FROM daily_completion_counts)",
+                Integer.class);
+    }
+
     static int processedRows(JdbcTemplate jdbc, UUID eventId) {
         return jdbc.queryForObject("SELECT count(*) FROM processed_events WHERE event_id = ?", Integer.class, eventId);
     }

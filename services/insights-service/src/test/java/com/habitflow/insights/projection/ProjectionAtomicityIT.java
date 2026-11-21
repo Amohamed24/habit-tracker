@@ -84,9 +84,12 @@ class ProjectionAtomicityIT extends IntegrationTestBase {
         assertThat(processedRows(jdbc, completed.eventId())).as("processed_events after rollback").isZero();
     }
 
-    /** Vice versa, literal: the processed_events write fails, so no projection row is written. */
+    /**
+     * No partial write on early failure: the processed_events insert itself fails, so the upsert never runs.
+     * Nothing was written before the throw, so this is not a rollback proof (see the two tests above for that).
+     */
     @Test
-    void processedEventInsertFails_writesNoProjection() {
+    void processedEventInsertFails_noPartialWrite() {
         long user = freshUserId();
         EventEnvelope completed = event(HABIT_COMPLETED, user, DAY);
         failOnUpdateOf(PROCESSED_TABLE, false, () -> { });
