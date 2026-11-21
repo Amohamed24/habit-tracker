@@ -9,7 +9,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -30,8 +29,17 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Import(IntegrationTestBase.GuardConfig.class)
 public abstract class IntegrationTestBase {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
+    /**
+     * Singleton container (HF-17): started once per JVM, never stopped by JUnit (Ryuk removes it at exit).
+     * Not {@code @Container}: that lifecycle stops it after each class while Spring's context cache keeps
+     * the next class's identical context pointed at the stopped container's port. {@code @Testcontainers}
+     * stays on the class for subclasses' own {@code @Container} fields (InsightsTopicGuardIT's Kafka).
+     */
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
+
+    static {
+        postgres.start();
+    }
 
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {

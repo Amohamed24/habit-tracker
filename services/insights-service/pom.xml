@@ -102,6 +102,17 @@
     </dependencies>
 
     <build>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+            </testResource>
+            <!-- Shared event contract fixtures (repo root), on the test classpath under events/ (as in habit-service).
+                 The Docker build context has no docs/, so Maven skips this directory there. -->
+            <testResource>
+                <directory>${project.basedir}/../../docs/events</directory>
+                <targetPath>events</targetPath>
+            </testResource>
+        </testResources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
