@@ -39,7 +39,8 @@ spring:
         spring.json.trusted.packages: com.habitflow.insights.event
     # listener.ack-mode is left at Spring Kafka's default, BATCH: a poll's offsets are committed only after
     # the listener has returned for every record in it, i.e. after each ProjectionService.apply transaction
-    # committed. A record whose apply throws is sought back, not committed.
+    # committed. A record whose apply throws is sought back, not committed, until the default error
+    # handler's retries are exhausted (L6, HF-20).
 
 server:
   port: 8082

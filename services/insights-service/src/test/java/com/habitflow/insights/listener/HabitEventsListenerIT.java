@@ -196,7 +196,8 @@ class HabitEventsListenerIT extends IntegrationTestBase {
     /**
      * Offset rule (not a Jira AC): a record is committed only after apply() returns. apply throws twice for one
      * event_id, then runs for real. On each failing attempt, from inside the listener thread, the group's
-     * committed offset for that partition must not be past the record; after the successful attempt it is.
+     * committed offset for that partition is exactly the record's offset (not past it); after the
+     * successful attempt it moves past the record.
      */
     @Test
     void failedApply_isNotCommittedUntilApplyReturns() throws Exception {
@@ -227,7 +228,8 @@ class HabitEventsListenerIT extends IntegrationTestBase {
         awaitCommittedPast(record);
         assertThat(attempts.get()).isEqualTo(3);
         assertThat(committedDuringFailure).hasSize(2)
-                .allSatisfy(c -> assertThat(c).isLessThanOrEqualTo(recordOffset.get()));
+                // The probe (same partition, just before) is committed first, so exactly the failing record.
+                .allSatisfy(c -> assertThat(c).isEqualTo(recordOffset.get()));
         assertThat(count(user)).isEqualTo(1);
         assertThat(processedRows(List.of(eventId))).isEqualTo(1);
     }

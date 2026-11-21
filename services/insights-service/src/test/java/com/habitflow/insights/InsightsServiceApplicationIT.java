@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.http.ResponseEntity;
 
 import javax.sql.DataSource;
@@ -29,6 +30,7 @@ class InsightsServiceApplicationIT extends IntegrationTestBase {
     @Autowired DataSource dataSource;
     @Autowired Flyway flyway;
     @Autowired TestRestTemplate rest;
+    @Autowired KafkaListenerEndpointRegistry listenerRegistry;
 
     @Test
     void contextLoads_onContainerDatabase() throws Exception {
@@ -57,6 +59,13 @@ class InsightsServiceApplicationIT extends IntegrationTestBase {
             assertThat(rs.getBoolean(1)).as("processed_events exists").isTrue();
             assertThat(rs.getBoolean(2)).as("daily_completion_counts exists").isTrue();
         }
+    }
+
+    /** HF-18: the base turns listener auto-startup off, so DB-only contexts never poll the closed Kafka port. */
+    @Test
+    void listenerContainers_areNotRunning() {
+        assertThat(listenerRegistry.getListenerContainers()).isNotEmpty()
+                .allSatisfy(c -> assertThat(c.isRunning()).isFalse());
     }
 
     @Test
