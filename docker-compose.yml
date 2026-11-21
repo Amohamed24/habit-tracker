@@ -90,6 +90,53 @@ services:
       - postgres
       - kafka
 
+  # insights-service's own database (R1-09b). A separate container + fresh volume, so POSTGRES_DB creates
+  # the insights DB; insights-service never points at habitflow-db.
+  insights-db:
+    image: postgres:15-alpine
+    container_name: habitflow-insights-db
+    environment:
+      POSTGRES_DB: insights
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - insights_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d insights"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  insights-service:
+    build:
+      context: ./services/insights-service
+      dockerfile: Dockerfile
+    container_name: habitflow-insights
+    ports:
+      - "8082:8082"
+    environment:
+      # Container port inside the compose network, not the 5433 host port.
+      DB_HOST: insights-db
+      DB_PORT: 5432
+      DB_NAME: insights
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    # busybox wget is in eclipse-temurin:21-jre-alpine (no curl); a 503 DOWN health exits non-zero.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- localhost:8082/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      insights-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
   prometheus:
     image: prom/prometheus:v2.47.0
     container_name: habitflow-prometheus
@@ -123,5 +170,6 @@ services:
 
 volumes:
   postgres_data:
+  insights_data:
   prometheus_data:
   grafana_data:
