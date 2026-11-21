@@ -46,8 +46,6 @@ import java.util.concurrent.TimeoutException;
 @Slf4j
 public class OutboxPublisher {
 
-    static final int BATCH_SIZE = 50;
-
     static final String HEADER_EVENT_TYPE = "event_type";
     static final String HEADER_EVENT_VERSION = "event_version";
     static final String HEADER_EVENT_ID = "event_id";
@@ -59,19 +57,25 @@ public class OutboxPublisher {
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final OutboxBackoff backoff;
     private final long sendTimeoutMs;
+    private final int batchSize;
 
     public OutboxPublisher(OutboxStore store, KafkaTemplate<String, String> kafkaTemplate, OutboxBackoff backoff,
-                           @Value("${outbox.send-timeout-ms:20000}") long sendTimeoutMs) {
+                           @Value("${outbox.send-timeout-ms:20000}") long sendTimeoutMs,
+                           @Value("${outbox.batch-size:50}") int batchSize) {
+        if (batchSize < 1) {
+            throw new IllegalArgumentException("outbox.batch-size must be >= 1, was " + batchSize);
+        }
         this.store = store;
         this.kafkaTemplate = kafkaTemplate;
         this.backoff = backoff;
         this.sendTimeoutMs = sendTimeoutMs;
+        this.batchSize = batchSize;
     }
 
     /** Publishes one batch and returns the number of rows marked sent (0 for an empty outbox). */
     @Transactional(timeout = 30)
     public int publishBatch() {
-        List<OutboxRow> rows = store.claim(BATCH_SIZE);
+        List<OutboxRow> rows = store.claim(batchSize);
         if (rows.isEmpty()) {
             return 0;
         }
