@@ -89,13 +89,15 @@ class InsightsContainerGuardIT {
 
     /** Overrides go in as command-line args: SpringApplicationBuilder.properties() would lose to application.yml. */
     private static void boot(String... overrides) {
-        String[] args = new String[overrides.length + 4];
+        String[] args = new String[overrides.length + 5];
         System.arraycopy(overrides, 0, args, 0, overrides.length);
         args[overrides.length] = "--spring.datasource.username=" + postgres.getUsername();
         args[overrides.length + 1] = "--spring.datasource.password=" + postgres.getPassword();
         // Closed port: no boot here may depend on (or reach) a local Kafka on 9092.
         args[overrides.length + 2] = "--spring.kafka.bootstrap-servers=localhost:1";
         args[overrides.length + 3] = "--spring.kafka.admin.auto-create=false";
+        // HF-18: no habit-events listener against the closed port either (as in IntegrationTestBase).
+        args[overrides.length + 4] = "--spring.kafka.listener.auto-startup=false";
         try (ConfigurableApplicationContext ignored = new SpringApplicationBuilder(
                 InsightsServiceApplication.class, GuardConfig.class)
                 .web(WebApplicationType.NONE)

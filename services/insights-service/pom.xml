@@ -81,6 +81,12 @@
             <artifactId>kafka</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Version managed by the Spring Boot parent -->
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
 
         <!-- Kafka -->
         <dependency>
