@@ -255,6 +255,8 @@ class DuplicateDeliveryProofIT extends IntegrationTestBase {
                 mismatchesBefore.size(), appliedBefore, DISTINCT, duplicateBefore, DUPLICATES, dlt,
                 mismatchesBefore.isEmpty() ? "" : "first=" + mismatchesBefore.subList(0, Math.min(5, mismatchesBefore.size())));
         assertThat(mismatchesBefore).as("projection vs expected before replay").isEmpty();
+        // Strict: every one of the 60 cells has a row (no missing-row-as-0) and no extra keys.
+        assertThat(before).as("projection map before replay").isEqualTo(expected);
         assertThat(results).hasSize(DISTINCT + DUPLICATES);
         assertThat(appliedBefore).isEqualTo(DISTINCT);
         assertThat(duplicateBefore).isEqualTo(DUPLICATES);
@@ -263,6 +265,7 @@ class DuplicateDeliveryProofIT extends IntegrationTestBase {
 
         // --- phase 2: rewind the group to earliest -------------------------------------------------------
         long t2 = System.nanoTime();
+        assertThat(listenerRegistry.getListenerContainers()).as("listener containers").hasSize(1);
         MessageListenerContainer container = listenerRegistry.getListenerContainers().iterator().next();
         container.stop();
         Map<TopicPartition, OffsetAndMetadata> rewind = earliest.entrySet().stream()
@@ -282,14 +285,17 @@ class DuplicateDeliveryProofIT extends IntegrationTestBase {
         long replayMs = millisSince(t2);
 
         Map<Cell, Integer> after = projectionMap();
-        List<ApplyResult> replay = results.subList(replayStart, results.size());
+        List<ApplyResult> replay = List.copyOf(results.subList(replayStart, results.size()));
         List<String> mismatchesAfter = mismatches(expected, after);
         int processed = processedEvents();
         int processedDistinct = jdbc.queryForObject(
                 "SELECT count(DISTINCT event_id) FROM processed_events WHERE consumer = ?", Integer.class,
                 ProjectionService.CONSUMER);
+        // Sanity check only: the (consumer, event_id) PK already forbids repeats. count(DISTINCT) and the
+        // set equality below are the real proof.
         List<UUID> repeatedIds = jdbc.queryForList(
-                "SELECT event_id FROM processed_events GROUP BY event_id HAVING count(*) > 1", UUID.class);
+                "SELECT event_id FROM processed_events WHERE consumer = ? GROUP BY event_id HAVING count(*) > 1",
+                UUID.class, ProjectionService.CONSUMER);
         Set<UUID> ledgerIds = new HashSet<>(jdbc.queryForList(
                 "SELECT event_id FROM processed_events WHERE consumer = ?", UUID.class, ProjectionService.CONSUMER));
         log.info("PROOF after-replay: mismatches={} unchangedVsBefore={} processed_events={} (expect {}) distinct={} "
