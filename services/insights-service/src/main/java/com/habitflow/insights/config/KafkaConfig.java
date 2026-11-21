@@ -1,5 +1,6 @@
 package com.habitflow.insights.config;
 
+import com.habitflow.insights.projection.ProjectionService;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,10 +25,27 @@ public class KafkaConfig {
     public static final String HABIT_EVENTS_TOPIC = "habit-events";
     public static final int HABIT_EVENTS_PARTITIONS = 3;
 
+    /**
+     * Consumer-specific dead-letter topic (R1-12a / HF-19): {@code habit-events.insights-service.DLT}. Built from
+     * the group id so it can't drift from it, and so a future consumer of habit-events gets its own DLT.
+     */
+    public static final String DLT_TOPIC = HABIT_EVENTS_TOPIC + "." + ProjectionService.CONSUMER + ".DLT";
+
+    /** Same as the source, so a dead-lettered record keeps its partition number (see DeadLetterConfig). */
+    public static final int DLT_PARTITIONS = HABIT_EVENTS_PARTITIONS;
+
     @Bean
     public NewTopic habitEventsTopic() {
         return TopicBuilder.name(HABIT_EVENTS_TOPIC)
                 .partitions(HABIT_EVENTS_PARTITIONS)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic habitEventsDltTopic() {
+        return TopicBuilder.name(DLT_TOPIC)
+                .partitions(DLT_PARTITIONS)
                 .replicas(1)
                 .build();
     }
