@@ -23,6 +23,23 @@ spring:
     baseline-version: 0
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    # HF-18: the only place the habit-events consumer is configured (group id and topic are on
+    # HabitEventsListener). HF-19 wraps value-deserializer in ErrorHandlingDeserializer here.
+    consumer:
+      auto-offset-reset: earliest
+      # No timer commits: offsets go through the listener container only.
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        # habit-service sends the outbox JSON as plain strings (StringSerializer), so there is no
+        # __TypeId__ header: ignore type headers and always bind to the local envelope record.
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: com.habitflow.insights.event.EventEnvelope
+        spring.json.trusted.packages: com.habitflow.insights.event
+    # listener.ack-mode is left at Spring Kafka's default, BATCH: a poll's offsets are committed only after
+    # the listener has returned for every record in it, i.e. after each ProjectionService.apply transaction
+    # committed. A record whose apply throws is sought back, not committed.
 
 server:
   port: 8082

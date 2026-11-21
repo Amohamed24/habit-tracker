@@ -13,7 +13,9 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.config.TopicBuilder;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.core.KafkaAdmin;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.KafkaContainer;
@@ -38,6 +40,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * points Kafka at a closed port with topic creation off; the dynamic properties below override both for this
  * class only ({@code @DynamicPropertySource} beats {@code @SpringBootTest} properties).
  */
+// HF-18: closed after the class so its running listener doesn't keep polling the stopped container.
+@DirtiesContext
 class InsightsTopicGuardIT extends IntegrationTestBase {
 
     // Legacy KafkaContainer, same image as habit-service's ITs and compose (cp-kafka 7.5.0). Fresh per class,
@@ -49,6 +53,17 @@ class InsightsTopicGuardIT extends IntegrationTestBase {
     static void kafkaProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         registry.add("spring.kafka.admin.auto-create", () -> "true");
+        // HF-18: the guard must hold with the habit-events listener running (KafkaAdmin creates the topic
+        // during refresh, before listener containers start).
+        registry.add("spring.kafka.listener.auto-startup", () -> "true");
+    }
+
+    @Autowired KafkaListenerEndpointRegistry listenerRegistry;
+
+    @Test
+    void listenerIsRunning() {
+        assertThat(listenerRegistry.getListenerContainers()).isNotEmpty()
+                .allSatisfy(c -> assertThat(c.isRunning()).isTrue());
     }
 
     @Autowired KafkaAdmin kafkaAdmin;

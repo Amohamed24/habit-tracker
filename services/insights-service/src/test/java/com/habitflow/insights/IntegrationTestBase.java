@@ -17,12 +17,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *
  * <p>The datasource comes from {@code @DynamicPropertySource} (not {@code @ServiceConnection}) so the
  * Environment holds the container URL and the guard can check it before Hikari or Flyway exist.
- * No Kafka container yet: nothing consumes or produces until HF-18, so bootstrap-servers points at a
- * closed port and topic creation is off.
+ * No Kafka by default: bootstrap-servers points at a closed port, topic creation is off, and (HF-18) the
+ * habit-events listener container doesn't start, so DB-only ITs don't retry a dead broker forever. Kafka ITs
+ * add their own container and turn all three back on in {@code @DynamicPropertySource}, which beats these.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.kafka.bootstrap-servers=localhost:1",
-        "spring.kafka.admin.auto-create=false"
+        "spring.kafka.admin.auto-create=false",
+        "spring.kafka.listener.auto-startup=false"
 })
 @Testcontainers
 // Explicit: a nested @TestConfiguration is only detected on the test class itself, not on a superclass.
