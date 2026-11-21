@@ -16,7 +16,8 @@ import org.springframework.stereotype.Component;
  * <p>The group id is {@link ProjectionService#CONSUMER}, the same name {@code apply} dedupes on, so the two
  * can't drift. Offsets are committed by the container (default BATCH ack mode) only after this method has
  * returned, i.e. after {@code apply}'s transaction committed; a redelivery after a crash is a DUPLICATE.
- * Deserializer settings live in {@code application.yml}. Error handling is Spring Kafka's default until HF-19/20.
+ * Deserializer settings live in {@code application.yml}; error handling and the DLT in {@code DeadLetterConfig}
+ * (HF-19). A record that failed deserialization never reaches this method.
  */
 @Component
 public class HabitEventsListener {

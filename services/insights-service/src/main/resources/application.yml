@@ -24,14 +24,20 @@ spring:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     # HF-18: the only place the habit-events consumer is configured (group id and topic are on
-    # HabitEventsListener). HF-19 wraps value-deserializer in ErrorHandlingDeserializer here.
+    # HabitEventsListener). Error handling and the dead-letter topic are in config/DeadLetterConfig (HF-19).
     consumer:
       auto-offset-reset: earliest
       # No timer commits: offsets go through the listener container only.
       enable-auto-commit: false
+      # Keys are aggregate ids written by StringSerializer, so they always decode; not wrapped.
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      # HF-19 (L7): a value JsonDeserializer can't parse no longer throws inside poll(). ErrorHandlingDeserializer
+      # returns null and puts the DeserializationException (with the raw bytes) in a header, so the container
+      # hands the record to the error handler, which sends it to habit-events.insights-service.DLT.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        # The spring.json.* settings below are passed on to the delegate.
         # habit-service sends the outbox JSON as plain strings (StringSerializer), so there is no
         # __TypeId__ header: ignore type headers and always bind to the local envelope record.
         spring.json.use.type.headers: false
@@ -39,8 +45,9 @@ spring:
         spring.json.trusted.packages: com.habitflow.insights.event
     # listener.ack-mode is left at Spring Kafka's default, BATCH: a poll's offsets are committed only after
     # the listener has returned for every record in it, i.e. after each ProjectionService.apply transaction
-    # committed. A record whose apply throws is sought back, not committed, until the default error
-    # handler's retries are exhausted (L6, HF-20).
+    # committed. A record whose apply throws is sought back, not committed, until the error handler's retries
+    # are exhausted (default backoff, 10 attempts; tuning is HF-20). It is then published to the DLT, and its
+    # offset is committed only after that publish succeeded (HF-19).
 
 server:
   port: 8082
