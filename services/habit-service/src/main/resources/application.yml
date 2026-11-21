@@ -49,6 +49,10 @@ spring:
 outbox:
   publisher:
     enabled: ${OUTBOX_PUBLISHER_ENABLED:true}
+  # Delay between the end of one poll and the start of the next (fixedDelay on the single scheduler thread).
+  poll-ms: ${OUTBOX_POLL_MS:500}
+  # Rows claimed per batch (one transaction). Must be >= 1; startup fails otherwise.
+  batch-size: ${OUTBOX_BATCH_SIZE:50}
   # One deadline for all acks of a batch; above delivery.timeout.ms, below the 30 s transaction timeout.
   send-timeout-ms: 20000
 
