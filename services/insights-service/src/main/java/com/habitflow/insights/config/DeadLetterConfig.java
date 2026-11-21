@@ -50,6 +50,7 @@ public class DeadLetterConfig {
     public KafkaTemplate<String, Object> deadLetterKafkaTemplate(KafkaProperties kafkaProperties,
                                                                 ObjectProvider<SslBundles> sslBundles,
                                                                 ObjectMapper objectMapper) {
+        // buildProducerProperties ignores KafkaConnectionDetails: a future @ServiceConnection IT must also wire this producer.
         Map<String, Object> config = new LinkedHashMap<>(
                 kafkaProperties.buildProducerProperties(sslBundles.getIfAvailable()));
         config.put(ProducerConfig.ACKS_CONFIG, "all");

@@ -203,6 +203,9 @@ class PoisonPillDltIT extends IntegrationTestBase {
         RecordMetadata poison = send(POISON);
 
         awaitCommittedPast(poison);
+        // The first sample (during the first failed send) can't catch a bug: no commit is possible before the
+        // error handler returns. The real checks are the second sample, taken after the first failure was handled
+        // (a commit-on-failure bug would already show there), and dltSends == 3 (the record was redelivered).
         assertThat(dltSends.get()).isEqualTo(3);
         assertThat(committedDuringFailure).hasSize(2)
                 .allSatisfy(c -> assertThat(c).isEqualTo(poison.offset()));
@@ -328,6 +331,10 @@ class PoisonPillDltIT extends IntegrationTestBase {
                     }
                 }
             }
+            List<String> behind = parts.stream().filter(tp -> consumer.position(tp) < end.get(tp))
+                    .map(tp -> tp + " position=" + consumer.position(tp) + " end=" + end.get(tp)).toList();
+            assertThat(behind).as("timed out after 10 s before reading the DLT to its end offsets; "
+                    + "matches so far would be partial").isEmpty();
         }
         return matches;
     }
