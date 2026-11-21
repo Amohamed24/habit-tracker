@@ -16,3 +16,8 @@ scrape_configs:
     metrics_path: '/actuator/prometheus'
     static_configs:
       - targets: ['habit-service:8080']
+
+  - job_name: 'insights-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['insights-service:8082']
