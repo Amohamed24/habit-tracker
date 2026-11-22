@@ -61,7 +61,8 @@ import static org.mockito.Mockito.doAnswer;
  * (the base's singleton) and a per-class Kafka. Runs under failsafe only.
  *
  * <p>The {@code @SpyBean} records a timestamp for every {@code apply} call on the test's own event id, then either
- * throws <b>before</b> calling the real method (so a failing attempt never opens the transaction or writes) or calls
+ * throws <b>before</b> calling the real method (so a failing attempt never writes; the transaction may already be
+ * open, since the spy sits inside the {@code @Transactional} proxy, and is rolled back by the throw) or calls
  * it. Each test waits until the group's committed offset passes its record; that commit happens only after success
  * or after the DLT publish succeeded (HF-19), so every attempt is over when the assertions run.
  *
