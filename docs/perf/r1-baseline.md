@@ -17,7 +17,15 @@ Query plans for the four R1 hot queries at realistic volume, the HF-25 k6 number
 
 ### Database
 - **Isolation:** a throwaway container `hf26-explain`, run with `--network none`, no published port and no
-  volume. It is removed by an EXIT trap.
+  *named* volume. The image declares `VOLUME /var/lib/postgresql/data`, so Docker also creates an
+  **anonymous** data volume for each run. The EXIT trap now removes both (`docker rm -fv`).
+  - **Correction:** the recorded runs used `docker rm -f`, which removed the container but left its
+    anonymous volume dangling. The raw file's start line (`r1-explain-raw.txt:29`, "no volume") is kept as
+    recorded. This ticket left two dangling volumes, **not removed**:
+    - `738fb58860a63f119615d0d32040ef3f573136577ac3a43c89c5b1c92c77c6dd`, created `2026-11-22T17:47:42Z` (dry run)
+    - `6c24c0c9584f7acfdf630be55084f1f02e787edd08bb7571327b6681d3ba4aec`, created `2026-11-22T17:48:34Z` (the recorded run)
+
+    Source: `docker volume ls -f dangling=true` plus `docker volume inspect` `CreatedAt`.
   - It uses image `sha256:b3968e348b48…`, the same image ID as `habitflow-db` and `habitflow-insights-db`.
   - PostgreSQL 15.15.
 - **Stock config, identical on both,** per the `pg_settings` lines for live `habitflow-db` and the throwaway
@@ -97,7 +105,8 @@ See `perf/sql/seed-habit.sql` and `perf/sql/seed-insights.sql`.
 
 ## 2. HF-25 k6 baseline (run `20261122T171517Z`, quoted from `r1-k6-before.txt`)
 50 VUs for 2 minutes, each iteration doing 1 toggle + 1 list with 1 s think time. Setup created one user and
-one habit per VU.
+one habit per VU (`perf/k6/toggle.js`: the `setup()` header comment at line 4, and
+`data.users[__VU - 1]` at line 54).
 
 | Metric | avg | med | p(90) | p(95) | p(99) | max |
 |---|---|---|---|---|---|---|
@@ -111,11 +120,18 @@ one habit per VU.
   - The outbox drained (0 unsent).
   - This run's 5704 rows had `sent_at - created_at` p50/p95/max of 187/542/668 ms.
   - The lag samples taken every 5 s are in the file.
-- **Volume at the time:** the live DB held about 80 habits (79 at the time of this report), not 10,000.
+- **Volume at the time:** the HF-26 live proof counted **79 habits** in the live DB (`r1-explain-raw.txt`,
+  `live proof (before)`, 17:48:34Z), not 10,000. `r1-k6-before.txt` doesn't record a habit count, so the
+  exact number during the k6 run isn't known. Setup added 50 of them (one per VU).
 
 ### Server-side means during the same window (Prometheus, read only)
 - Evaluated at `2026-11-22T17:17:30Z` over `[2m]`; the raw PromQL and JSON are at the end of
   `r1-explain-raw.txt`.
+- **The window starts at 17:15:30Z, about 8 s after load began.** `r1-k6-before.txt:57-59` logs the k6
+  start at 17:15:22 (DB time). So the first seconds of the run fall outside the window.
+  - Setup calls are also outside it: `POST /api/habits` counts 0 in the window.
+  - The window's list and toggle counts (5649.8014455903785 each, an `increase()` extrapolation) are just
+    under k6's 5654 iterations.
 - **These are means only.** The timers have no histogram buckets, so there are no server-side percentiles.
   The `_max` gauges are rolling windows that can include pre-run requests, so they are not used.
 
@@ -159,8 +175,10 @@ The validate count is about list + toggle: one synchronous validate call per hab
   row is fetched and fully sorted** (`quicksort`, 439kB) before 50 are kept.
   - `LockRows` sits between `Limit` and `Sort`, so the sort is not a bounded top-N.
   - `LockRows` adds 100 buffer hits (163 − 63) to lock 50 rows.
-- **Time:** 1.640 ms execution (run 1: 3.800 ms). This is off the request path; one scheduler thread runs it
-  every 500 ms.
+- **Time:** 1.640 ms execution (run 1: 3.800 ms). This is off the request path. One scheduler thread runs it
+  500 ms after the previous poll ends: `outbox.poll-ms: ${OUTBOX_POLL_MS:500}` (habit-service
+  `application.yml:53`), used as `@Scheduled(fixedDelayString = "${outbox.poll-ms:500}")`
+  (`OutboxPublisherScheduler.java:21`). It's a fixed delay, not a fixed rate.
 - **At larger backlogs:** the scan and sort cover every due row, so cost grows with the backlog, not with the
   batch size. A backlog large enough to exceed `work_mem` (4096 kB) would sort on disk. That case was not
   measured here.
@@ -252,8 +270,8 @@ change's size and risk. The evidence column cites only numbers above.
 - Rank 1 here is the auth hop. It is a design change, not a one-migration perf fix, so this report
   recommends **HF-27 apply rank 3** (the `habits(user_id)` index). Rank 1 should get its own ticket. That
   choice is the ticket owner's to confirm.
-- Either way, the HF-25 k6 shape is a poor detector for rank 2 and rank 3: 1 habit per user, about 80 habits
-  in the table. HF-27 should decide its k6 volume deliberately and say so, rather than expect a visible p95
+- Either way, the HF-25 k6 shape is a poor detector for rank 2 and rank 3. It has 1 habit per user
+  (`perf/k6/toggle.js:54`), and the live table held 79 habits at the HF-26 live proof. HF-27 should decide its k6 volume deliberately and say so, rather than expect a visible p95
   change.
 
 ## 5. Known limitations
@@ -264,8 +282,11 @@ change's size and risk. The evidence column cites only numbers above.
 - **Plans can differ on the live DB size:** 79 live habits against 10,000 seeded. Small tables favour seq
   scans whatever the indexes.
 - **Custom plans:** these are custom plans from `PREPARE`/`EXECUTE` (3 executions, `plan_cache_mode = auto`).
-  pgjdbc switches to server-side prepared statements after 5 executions, and Postgres may then choose
-  generic plans.
+  - pgjdbc switches a statement to a server-side prepared statement after 5 executions. That's the
+    `prepareThreshold` connection property, default 5, from the pgjdbc connection-properties documentation.
+  - The services don't override it: there's no `prepareThreshold` in `services/*/src/main`, and the
+    datasource URL has no parameters.
+  - Postgres may then choose generic plans for those statements.
 - **Single laptop:** one M1 laptop, Docker Desktop VM shared with the running habitflow stack. One run of
   3 repeats, so there's no variance estimate, and EXPLAIN ANALYZE adds its own timing overhead.
 - **`findByUserId` SQL is derived,** not captured (see Method).
@@ -277,4 +298,5 @@ change's size and risk. The evidence column cites only numbers above.
 ```bash
 ./perf/sql/explain.sh          # from the repo root; needs the compose stack up for the live proof + Prometheus
 ```
-Only the container `hf26-explain` is created and removed. The live DBs are only read.
+Only the container `hf26-explain` and its anonymous data volume are created and removed (`docker rm -fv`).
+The live DBs are only read.

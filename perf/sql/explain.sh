@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # HF-26: EXPLAIN (ANALYZE, BUFFERS) of the R1 hot queries in a throwaway Postgres. Usage: ./perf/sql/explain.sh
-# Writes go ONLY to the container hf26-explain (--network none, no volume). The live DBs are read (SELECT/SHOW) only.
-# The container is removed on exit, success or failure. No other container or volume is touched.
+# Writes go ONLY to the container hf26-explain (--network none, no published port, no named volume) and its
+# anonymous data volume: the image declares VOLUME /var/lib/postgresql/data, so Docker creates one per run.
+# Both are removed on exit (docker rm -fv), success or failure. The live DBs are read (SELECT/SHOW) only.
+# No other container or volume is touched.
 set -euo pipefail
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 cd "$(git rev-parse --show-toplevel)"
@@ -11,7 +13,6 @@ NAME=hf26-explain
 PG_IMAGE='sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21'
 OUT="${OUT:-docs/perf/r1-explain-raw.txt}"
 PROM="${PROM:-http://localhost:9090}"
-mkdir -p "$(dirname "$OUT")"; : > "$OUT"
 log() { printf '%s\n' "$*" | tee -a "$OUT"; }
 run() { "$@" 2>&1 | tee -a "$OUT"; return "${PIPESTATUS[0]}"; }
 live_habit() { docker compose exec -T postgres psql -U postgres -d habitflow -At -F ' | ' -c "$1"; }
@@ -23,11 +24,21 @@ if [ -n "$(docker ps -aq --filter "name=^${NAME}$")" ]; then
   echo "A container named $NAME already exists; not touching it. Remove it yourself if it is stale." >&2
   exit 2
 fi
+mkdir -p "$(dirname "$OUT")"; : > "$OUT"   # truncate only after the guard passed
 
+# Fails the script (exit 4) if any count comes back empty or non-numeric: an unproven "unchanged" is no proof.
 live_proof() {
+  local h i a b c d e f
+  h=$(live_habit "SELECT (SELECT count(*) FROM habits), (SELECT count(*) FROM habit_completions), (SELECT count(*) FROM outbox_events), (SELECT count(*) FROM outbox_events WHERE sent_at IS NULL)")
+  i=$(live_ins "SELECT (SELECT count(*) FROM processed_events), (SELECT count(*) FROM daily_completion_counts)")
+  IFS='|' read -r a b c d <<< "$(printf '%s' "$h" | tr -d ' ')"
+  IFS='|' read -r e f <<< "$(printf '%s' "$i" | tr -d ' ')"
+  for n in "$a" "$b" "$c" "$d" "$e" "$f"; do
+    [[ "$n" =~ ^[0-9]+$ ]] || { log "== live proof ($1) FAILED: empty or non-numeric count (habitflow='$h' insights='$i')"; exit 4; }
+  done
   log "== live proof ($1), DB time $(live_habit "SELECT to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')") UTC"
-  log "   habitflow: $(live_habit "SELECT 'habits=' || (SELECT count(*) FROM habits) || ' habit_completions=' || (SELECT count(*) FROM habit_completions) || ' outbox_events=' || (SELECT count(*) FROM outbox_events) || ' outbox_unsent=' || (SELECT count(*) FROM outbox_events WHERE sent_at IS NULL)")"
-  log "   insights:  $(live_ins "SELECT 'processed_events=' || (SELECT count(*) FROM processed_events) || ' daily_completion_counts=' || (SELECT count(*) FROM daily_completion_counts)")"
+  log "   habitflow: habits=$a habit_completions=$b outbox_events=$c outbox_unsent=$d"
+  log "   insights:  processed_events=$e daily_completion_counts=$f"
   for c in habitflow-db habitflow-insights-db; do
     log "   $(docker inspect -f '{{.Name}} started={{.State.StartedAt}} image={{.Image}}' "$c")"
   done
@@ -45,13 +56,15 @@ live_proof before
 log "== live habitflow-db settings (read only):"
 run live_habit "SELECT name || ' = ' || setting || coalesce(' ' || unit, '') FROM pg_settings WHERE name IN ('server_version','shared_buffers','work_mem','effective_cache_size','random_page_cost','jit','plan_cache_mode') ORDER BY name" >/dev/null
 
-log "== start $NAME (image $PG_IMAGE, --network none, no published port, no volume)"
-trap 'docker rm -f "$NAME" >/dev/null 2>&1 && echo "== removed $NAME" | tee -a "$OUT" || true' EXIT
+log "== start $NAME (image $PG_IMAGE, --network none, no published port, no named volume; anonymous data volume removed with it)"
 docker run -d --name "$NAME" --network none -e POSTGRES_PASSWORD=postgres \
   -v "$PWD/services/habit-service/src/main/resources/db/migration:/mig/habit:ro" \
   -v "$PWD/services/insights-service/src/main/resources/db/migration:/mig/insights:ro" \
   -v "$PWD/perf/sql:/hf26:ro" \
   "$PG_IMAGE" >/dev/null
+# Trap only once docker run succeeded, so a failed start never removes anything. -v also removes the anonymous
+# data volume the image's VOLUME /var/lib/postgresql/data creates (docker rm -f alone leaves it dangling).
+trap 'docker rm -fv "$NAME" >/dev/null 2>&1 && echo "== removed $NAME and its anonymous volume" | tee -a "$OUT" || true' EXIT
 
 # The entrypoint runs a temporary server during init, so wait for init to finish, then for pg_isready.
 for _ in $(seq 1 60); do
