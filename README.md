@@ -5,7 +5,7 @@ A habit tracker: a React frontend and three Spring Boot services ([auth](service
 outbox, at-least-once publishing with backoff, and an idempotent consumer with a dead-letter topic. Every claim below links
 to the file or test that backs it.
 
-**Live Demo:** [habitflow.vercel.app](https://habit-tracker-one-murex.vercel.app)
+**Live Demo:** [habit-tracker-one-murex.vercel.app](https://habit-tracker-one-murex.vercel.app)
 
 [![Services CI](https://github.com/Amohamed24/habit-tracker/actions/workflows/services-ci.yml/badge.svg?branch=main)](https://github.com/Amohamed24/habit-tracker/actions/workflows/services-ci.yml) [![CI](https://github.com/Amohamed24/habit-tracker/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Amohamed24/habit-tracker/actions/workflows/ci.yml)
 
@@ -283,8 +283,7 @@ There are no outbox-backlog or DLT metrics yet (HF-24).
 ## Getting Started
 
 ### Prerequisites
-- JDK 21 (Temurin is what CI uses, [`services-ci.yml`](.github/workflows/services-ci.yml)). Newer JDKs (e.g. 24) break the
-  Lombok version that Boot 3.2.0 pins.
+- JDK 21 (Temurin is what CI uses, [`services-ci.yml`](.github/workflows/services-ci.yml)).
 - Docker with Compose v2. Testcontainers (the integration tests) needs only a running Docker daemon.
 - Node.js 18+, only for the frontend.
 
@@ -323,15 +322,25 @@ On macOS, if `docker` isn't found in your shell, see [Troubleshooting](#docker-c
 
 4. **Try the event flow** (see [API Reference](#api-reference) for the endpoints)
    ```bash
-   TOKEN=$(curl -fsS -X POST localhost:8081/api/auth/register -H 'Content-Type: application/json' \
-     -d '{"email": "demo@example.com", "password": "password123"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
+   EMAIL="demo-$(date +%s)@example.com"    # unique per run, so the block works more than once
+   AUTH=$(curl -fsS -X POST localhost:8081/api/auth/register -H 'Content-Type: application/json' \
+     -d "{\"email\": \"$EMAIL\", \"password\": \"password123\"}")
+   TOKEN=$(echo "$AUTH" | sed -E 's/.*"token":"([^"]+)".*/\1/')
+   USER_ID=$(echo "$AUTH" | sed -E 's/.*"userId":([0-9]+).*/\1/')
    HABIT=$(curl -fsS -X POST localhost:8080/api/habits -H "Authorization: Bearer $TOKEN" \
      -H 'Content-Type: application/json' -d '{"name": "Exercise", "frequency": "DAILY"}' | sed -E 's/.*"id":([0-9]+).*/\1/')
    curl -fsS -X POST localhost:8080/api/habits/$HABIT/toggle -H "Authorization: Bearer $TOKEN"; echo
-   sleep 2   # the outbox publisher polls every 500 ms; give the event time to reach insights-service
-   docker compose exec -T insights-db psql -U postgres -d insights -c 'SELECT * FROM daily_completion_counts'
+   # The completion is asynchronous: the outbox publisher (polls every 500 ms) sends it to Kafka, then
+   # insights-service consumes it and updates the projection. Poll for up to about 10 s to cover both.
+   for i in $(seq 1 20); do
+     ROW=$(docker compose exec -T insights-db psql -U postgres -d insights -At -c \
+       "SELECT user_id, completion_date, completed_count FROM daily_completion_counts WHERE user_id = $USER_ID")
+     [ -n "$ROW" ] && break
+     sleep 0.5
+   done
+   echo "projection: ${ROW:-no row after about 10 s}"
    ```
-   The projection shows one row with `completed_count` 1.
+   The last line shows this user's row, `user_id|today|1`.
 
 5. **Stop**
    ```bash
@@ -343,7 +352,10 @@ On macOS, if `docker` isn't found in your shell, see [Troubleshooting](#docker-c
    [`docker-compose.yml`](docker-compose.yml)), so after a `down` the broker starts empty: topic history, DLT records and
    consumer offsets are gone from the running stack (the old anonymous volumes are left behind, detached). Events
    already applied stay in the projection, and unsent outbox rows are still published.
-   **Don't add `-v`** unless you mean to delete both databases: it removes `postgres_data` and `insights_data`.
+   **Don't add `-v`** unless you mean to delete everything. `docker compose down -v` removes every volume of the stack:
+   - `postgres_data` (users, habits, completions, outbox) and `insights_data` (the projection),
+   - `prometheus_data` (metrics history) and `grafana_data` (Grafana state),
+   - the anonymous volumes holding Kafka's and ZooKeeper's data.
 
 Container names are fixed (`habitflow-db`, `habitflow-kafka`, ...), so only one copy of the stack can run on a machine.
 
@@ -552,7 +564,7 @@ the index's effect. Query plans: `./perf/sql/explain.sh`, described in the repor
 ### Frontend tests
 ```bash
 cd frontend
-npm run test
+npm test -- --run
 ```
 
 ---
@@ -562,7 +574,7 @@ npm run test
 | Workflow | Runs on | What it does |
 |---|---|---|
 | [Services CI](.github/workflows/services-ci.yml) | PRs and pushes to `main` that touch `services/**` or the workflow | For auth-, habit- and insights-service in parallel, on Temurin JDK 21: `./mvnw -B verify` (unit tests and the Testcontainers ITs), then `docker build` of the service image (built, not run) |
-| [CI](.github/workflows/ci.yml) | Every PR and push to `main` | Monolith `./mvnw test`; frontend `npm ci`, `npm test -- --run`, `npm run build` |
+| [CI](.github/workflows/ci.yml) | PRs into `main` and pushes to `main` (no path filter) | Monolith `./mvnw test`; frontend `npm ci`, `npm test -- --run`, `npm run build` |
 | [Backend CI](.github/workflows/backend-ci.yml) | Changes under `backend/**` | Monolith tests, package, upload the jar |
 | [Frontend CI](.github/workflows/frontend.ci.yml) | Changes under `frontend/**` | Lint (if configured), tests, build, upload `dist` |
 | [Deploy](.github/workflows/deploy.yml) | Pushes to `main` | Prints a message only; it has no deploy step |
@@ -638,7 +650,8 @@ docker compose exec kafka kafka-consumer-groups --bootstrap-server localhost:909
 docker compose start habit-service
 ```
 Any other `user-events` records not yet consumed are skipped too; habit-service only logs them.
-**Don't use `docker compose down -v` for this**: it deletes both databases.
+**Don't use `docker compose down -v` for this**: it deletes every volume of the stack, both databases included
+(see [Stop](#running-locally-with-docker-compose)).
 
 ### Docker Credential Error
 If you see `docker-credential-desktop` errors, remove the `"credsStore"` entry from `~/.docker/config.json` (rather than
