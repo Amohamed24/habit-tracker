@@ -1,0 +1,320 @@
+== HF-26 EXPLAIN run 20261122T174832Z (local 2026-11-22 11:48:32 CST)
+== git: 820b9532d982073a445958086ff32f0f70d6ae50 on HF-26-explain-report
+   git status: ?? docs/perf/r1-explain-raw.txt
+   git status: ?? perf/sql/
+== host: MacBookPro17,1, Apple M1, 8 CPUs, 8 GiB RAM
+== docker: server 29.1.3, VM 8 CPUs, 4630360064 bytes memory
+== running containers (incl. non-habitflow ones sharing the VM):
+   habitflow-habits  habit-tracker-habit-service  Up 40 minutes
+   habitflow-auth  habit-tracker-auth-service  Up 40 minutes
+   habitflow-insights  habit-tracker-insights-service  Up 40 minutes (healthy)
+   habitflow-insights-db  postgres:15-alpine  Up 29 hours (healthy)
+   habitflow-prometheus  prom/prometheus:v2.47.0  Up 29 hours
+   habitflow-kafka  confluentinc/cp-kafka:7.5.0  Up 2 days (healthy)
+   habitflow-db  postgres:15-alpine  Up 3 days (healthy)
+   habitflow-zookeeper  confluentinc/cp-zookeeper:7.5.0  Up 3 days
+== live proof (before), DB time 2026-11-22 17:48:34 UTC
+   habitflow: habits=79 habit_completions=58 outbox_events=5948 outbox_unsent=0
+   insights:  processed_events=5953 daily_completion_counts=70
+   /habitflow-db started=2026-11-19T17:07:01.631843379Z image=sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21
+   /habitflow-insights-db started=2026-11-21T12:58:17.450662215Z image=sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21
+== live habitflow-db settings (read only):
+effective_cache_size = 524288 8kB
+jit = on
+plan_cache_mode = auto
+random_page_cost = 4
+server_version = 15.15
+shared_buffers = 16384 8kB
+work_mem = 4096 kB
+== start hf26-explain (image sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21, --network none, no published port, no volume)
+== hf26-explain ready
+== throwaway settings:
+effective_cache_size = 524288 8kB
+jit = on
+plan_cache_mode = auto
+random_page_cost = 4
+server_version = 15.15
+shared_buffers = 16384 8kB
+work_mem = 4096 kB
+== schema: real migration files via psql -f, in version order (no Flyway history table)
+   habit_completions: CREATE UNIQUE INDEX habit_completions_pkey ON public.habit_completions USING btree (id)
+   habit_completions: CREATE UNIQUE INDEX uk_habit_completions_habit_date ON public.habit_completions USING btree (habit_id, completion_date)
+   habits: CREATE UNIQUE INDEX habits_pkey ON public.habits USING btree (id)
+   outbox_events: CREATE UNIQUE INDEX outbox_events_pkey ON public.outbox_events USING btree (id)
+   outbox_events: CREATE INDEX outbox_events_unsent_idx ON public.outbox_events USING btree (next_attempt_at) WHERE (sent_at IS NULL)
+   daily_completion_counts: CREATE UNIQUE INDEX daily_completion_counts_pkey ON public.daily_completion_counts USING btree (user_id, completion_date)
+   processed_events: CREATE UNIQUE INDEX processed_events_pkey ON public.processed_events USING btree (consumer, event_id)
+== seed
+INSERT 0 10000
+INSERT 0 150000
+INSERT 0 100000
+INSERT 0 1000
+INSERT 0 100000
+INSERT 0 60000
+== VACUUM (ANALYZE)
+== seeded sizes, habitflow:
+   habit_completions: rows=150000 relpages=1103 heap=8824 kB indexes=8256 kB
+   habits: rows=10000 relpages=133 heap=1064 kB indexes=240 kB
+   outbox_events: rows=101000 relpages=5941 heap=46 MB indexes=4336 kB
+   outbox_events unsent=1000
+   outbox payload avg bytes=332
+== seeded sizes, insights:
+   daily_completion_counts: rows=60000 relpages=383 heap=3064 kB indexes=2096 kB
+   processed_events: rows=100000 relpages=935 heap=7480 kB indexes=7656 kB
+== EXPLAIN, habitflow (Q1 claim, Q3 findByUserId, Q4 exists)
+Pager usage is off.
+PREPARE
+PREPARE
+PREPARE
+#### Q1 claim: run 1
+BEGIN
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=135.66..136.28 rows=50 width=93) (actual time=3.673..3.738 rows=50 loops=1)
+   Buffers: shared hit=166
+   ->  LockRows  (cost=135.66..147.86 rows=976 width=93) (actual time=3.672..3.733 rows=50 loops=1)
+         Buffers: shared hit=166
+         ->  Sort  (cost=135.66..138.10 rows=976 width=93) (actual time=3.629..3.633 rows=50 loops=1)
+               Sort Key: created_at
+               Sort Method: quicksort  Memory: 439kB
+               Buffers: shared hit=66
+               ->  Index Scan using outbox_events_unsent_idx on outbox_events  (cost=0.28..103.24 rows=976 width=93) (actual time=1.917..3.293 rows=1000 loops=1)
+                     Index Cond: (next_attempt_at <= now())
+                     Filter: (sent_at IS NULL)
+                     Buffers: shared hit=63
+ Planning:
+   Buffers: shared hit=156
+ Planning Time: 0.793 ms
+ Execution Time: 3.800 ms
+(16 rows)
+
+ROLLBACK
+#### Q1 claim: run 2
+BEGIN
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=135.66..136.28 rows=50 width=93) (actual time=1.448..1.473 rows=50 loops=1)
+   Buffers: shared hit=163
+   ->  LockRows  (cost=135.66..147.86 rows=976 width=93) (actual time=1.447..1.469 rows=50 loops=1)
+         Buffers: shared hit=163
+         ->  Sort  (cost=135.66..138.10 rows=976 width=93) (actual time=1.436..1.439 rows=50 loops=1)
+               Sort Key: created_at
+               Sort Method: quicksort  Memory: 439kB
+               Buffers: shared hit=63
+               ->  Index Scan using outbox_events_unsent_idx on outbox_events  (cost=0.28..103.24 rows=976 width=93) (actual time=0.013..1.211 rows=1000 loops=1)
+                     Index Cond: (next_attempt_at <= now())
+                     Filter: (sent_at IS NULL)
+                     Buffers: shared hit=63
+ Planning Time: 0.039 ms
+ Execution Time: 1.511 ms
+(14 rows)
+
+ROLLBACK
+#### Q1 claim: run 3
+BEGIN
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=135.66..136.28 rows=50 width=93) (actual time=1.558..1.591 rows=50 loops=1)
+   Buffers: shared hit=163
+   ->  LockRows  (cost=135.66..147.86 rows=976 width=93) (actual time=1.558..1.587 rows=50 loops=1)
+         Buffers: shared hit=163
+         ->  Sort  (cost=135.66..138.10 rows=976 width=93) (actual time=1.519..1.522 rows=50 loops=1)
+               Sort Key: created_at
+               Sort Method: quicksort  Memory: 439kB
+               Buffers: shared hit=63
+               ->  Index Scan using outbox_events_unsent_idx on outbox_events  (cost=0.28..103.24 rows=976 width=93) (actual time=0.014..1.235 rows=1000 loops=1)
+                     Index Cond: (next_attempt_at <= now())
+                     Filter: (sent_at IS NULL)
+                     Buffers: shared hit=63
+ Planning Time: 0.038 ms
+ Execution Time: 1.640 ms
+(14 rows)
+
+ROLLBACK
+#### Q3 findByUserId (derived): run 1
+BEGIN
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Seq Scan on habits h1_0  (cost=0.00..258.00 rows=5 width=72) (actual time=0.103..0.966 rows=5 loops=1)
+   Filter: (user_id = '1000'::bigint)
+   Rows Removed by Filter: 9995
+   Buffers: shared hit=133
+ Planning:
+   Buffers: shared hit=48
+ Planning Time: 0.300 ms
+ Execution Time: 0.971 ms
+(8 rows)
+
+ROLLBACK
+#### Q3 findByUserId (derived): run 2
+BEGIN
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Seq Scan on habits h1_0  (cost=0.00..258.00 rows=5 width=72) (actual time=0.044..0.394 rows=5 loops=1)
+   Filter: (user_id = '1000'::bigint)
+   Rows Removed by Filter: 9995
+   Buffers: shared hit=133
+ Planning Time: 0.019 ms
+ Execution Time: 0.397 ms
+(6 rows)
+
+ROLLBACK
+#### Q3 findByUserId (derived): run 3
+BEGIN
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Seq Scan on habits h1_0  (cost=0.00..258.00 rows=5 width=72) (actual time=0.042..0.372 rows=5 loops=1)
+   Filter: (user_id = '1000'::bigint)
+   Rows Removed by Filter: 9995
+   Buffers: shared hit=133
+ Planning Time: 0.018 ms
+ Execution Time: 0.374 ms
+(6 rows)
+
+ROLLBACK
+#### Q4 existsByHabitIdAndCompletionDate: run 1
+BEGIN
+                                                                          QUERY PLAN                                                                           
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.42..8.44 rows=1 width=8) (actual time=0.046..0.047 rows=1 loops=1)
+   Buffers: shared hit=4
+   ->  Index Scan using uk_habit_completions_habit_date on habit_completions hc1_0  (cost=0.42..8.44 rows=1 width=8) (actual time=0.046..0.046 rows=1 loops=1)
+         Index Cond: ((habit_id = '1000'::bigint) AND (completion_date = '2026-11-22'::date))
+         Buffers: shared hit=4
+ Planning:
+   Buffers: shared hit=54
+ Planning Time: 0.277 ms
+ Execution Time: 0.053 ms
+(9 rows)
+
+ROLLBACK
+#### Q4 existsByHabitIdAndCompletionDate: run 2
+BEGIN
+                                                                          QUERY PLAN                                                                           
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.42..8.44 rows=1 width=8) (actual time=0.010..0.011 rows=1 loops=1)
+   Buffers: shared hit=4
+   ->  Index Scan using uk_habit_completions_habit_date on habit_completions hc1_0  (cost=0.42..8.44 rows=1 width=8) (actual time=0.010..0.010 rows=1 loops=1)
+         Index Cond: ((habit_id = '1000'::bigint) AND (completion_date = '2026-11-22'::date))
+         Buffers: shared hit=4
+ Planning Time: 0.029 ms
+ Execution Time: 0.019 ms
+(7 rows)
+
+ROLLBACK
+#### Q4 existsByHabitIdAndCompletionDate: run 3
+BEGIN
+                                                                          QUERY PLAN                                                                           
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.42..8.44 rows=1 width=8) (actual time=0.009..0.009 rows=1 loops=1)
+   Buffers: shared hit=4
+   ->  Index Scan using uk_habit_completions_habit_date on habit_completions hc1_0  (cost=0.42..8.44 rows=1 width=8) (actual time=0.008..0.009 rows=1 loops=1)
+         Index Cond: ((habit_id = '1000'::bigint) AND (completion_date = '2026-11-22'::date))
+         Buffers: shared hit=4
+ Planning Time: 0.029 ms
+ Execution Time: 0.022 ms
+(7 rows)
+
+ROLLBACK
+== EXPLAIN, insights (Q2 processed_events insert + projection upsert)
+Pager usage is off.
+PREPARE
+PREPARE
+#### Q2 processed_events insert + projection upsert: run 1
+BEGIN
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Insert on processed_events  (cost=0.00..0.01 rows=0 width=0) (actual time=0.336..0.337 rows=0 loops=1)
+   Conflict Resolution: NOTHING
+   Tuples Inserted: 1
+   Conflicting Tuples: 0
+   Buffers: shared hit=64
+   ->  Result  (cost=0.00..0.01 rows=1 width=242) (actual time=0.001..0.001 rows=1 loops=1)
+ Planning Time: 0.076 ms
+ Execution Time: 0.371 ms
+(8 rows)
+
+                                                  QUERY PLAN                                                   
+---------------------------------------------------------------------------------------------------------------
+ Insert on daily_completion_counts  (cost=0.00..0.01 rows=0 width=0) (actual time=0.162..0.163 rows=0 loops=1)
+   Conflict Resolution: UPDATE
+   Conflict Arbiter Indexes: daily_completion_counts_pkey
+   Tuples Inserted: 0
+   Conflicting Tuples: 1
+   Buffers: shared hit=28
+   ->  Result  (cost=0.00..0.01 rows=1 width=24) (actual time=0.001..0.001 rows=1 loops=1)
+ Planning:
+   Buffers: shared hit=31
+ Planning Time: 0.113 ms
+ Execution Time: 0.205 ms
+(11 rows)
+
+ROLLBACK
+#### Q2 processed_events insert + projection upsert: run 2
+BEGIN
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Insert on processed_events  (cost=0.00..0.01 rows=0 width=0) (actual time=0.055..0.055 rows=0 loops=1)
+   Conflict Resolution: NOTHING
+   Tuples Inserted: 1
+   Conflicting Tuples: 0
+   Buffers: shared hit=9
+   ->  Result  (cost=0.00..0.01 rows=1 width=242) (actual time=0.001..0.001 rows=1 loops=1)
+ Planning Time: 0.018 ms
+ Execution Time: 0.066 ms
+(8 rows)
+
+                                                  QUERY PLAN                                                   
+---------------------------------------------------------------------------------------------------------------
+ Insert on daily_completion_counts  (cost=0.00..0.01 rows=0 width=0) (actual time=0.029..0.029 rows=0 loops=1)
+   Conflict Resolution: UPDATE
+   Conflict Arbiter Indexes: daily_completion_counts_pkey
+   Tuples Inserted: 0
+   Conflicting Tuples: 1
+   Buffers: shared hit=10
+   ->  Result  (cost=0.00..0.01 rows=1 width=24) (actual time=0.001..0.001 rows=1 loops=1)
+ Planning Time: 0.019 ms
+ Execution Time: 0.034 ms
+(9 rows)
+
+ROLLBACK
+#### Q2 processed_events insert + projection upsert: run 3
+BEGIN
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
+ Insert on processed_events  (cost=0.00..0.01 rows=0 width=0) (actual time=0.046..0.046 rows=0 loops=1)
+   Conflict Resolution: NOTHING
+   Tuples Inserted: 1
+   Conflicting Tuples: 0
+   Buffers: shared hit=9
+   ->  Result  (cost=0.00..0.01 rows=1 width=242) (actual time=0.001..0.001 rows=1 loops=1)
+ Planning Time: 0.019 ms
+ Execution Time: 0.056 ms
+(8 rows)
+
+                                                  QUERY PLAN                                                   
+---------------------------------------------------------------------------------------------------------------
+ Insert on daily_completion_counts  (cost=0.00..0.01 rows=0 width=0) (actual time=0.023..0.023 rows=0 loops=1)
+   Conflict Resolution: UPDATE
+   Conflict Arbiter Indexes: daily_completion_counts_pkey
+   Tuples Inserted: 0
+   Conflicting Tuples: 1
+   Buffers: shared hit=10
+   ->  Result  (cost=0.00..0.01 rows=1 width=24) (actual time=0.001..0.001 rows=1 loops=1)
+ Planning Time: 0.020 ms
+ Execution Time: 0.028 ms
+(9 rows)
+
+ROLLBACK
+== Prometheus (http://localhost:9090), evaluated at 2026-11-22T17:17:30Z over [2m] (HF-25 load window)
+   PromQL: sum by (job,method,uri,status) (increase(http_server_requests_seconds_sum{uri=~"/api/auth/validate|/api/habits|/api/habits/{id}/toggle"}[2m])) / sum by (job,method,uri,status) (increase(http_server_requests_seconds_count{uri=~"/api/auth/validate|/api/habits|/api/habits/{id}/toggle"}[2m]))
+   -> {"status":"success","data":{"resultType":"vector","result":[{"metric":{"job":"auth-service","method":"GET","status":"200","uri":"/api/auth/validate"},"value":[1795367850,"0.004387109583443106"]},{"metric":{"job":"habit-service","method":"GET","status":"200","uri":"/api/habits"},"value":[1795367850,"0.01730004587621359"]},{"metric":{"job":"habit-service","method":"POST","status":"200","uri":"/api/habits"},"value":[1795367850,"NaN"]},{"metric":{"job":"habit-service","method":"POST","status":"200","uri":"/api/habits/{id}/toggle"},"value":[1795367850,"0.03378443955663431"]}]}}
+   PromQL: sum by (job,method,uri,status) (increase(http_server_requests_seconds_count{uri=~"/api/auth/validate|/api/habits|/api/habits/{id}/toggle"}[2m]))
+   -> {"status":"success","data":{"resultType":"vector","result":[{"metric":{"job":"auth-service","method":"GET","status":"200","uri":"/api/auth/validate"},"value":[1795367850,"11278.534899002885"]},{"metric":{"job":"habit-service","method":"GET","status":"200","uri":"/api/habits"},"value":[1795367850,"5649.8014455903785"]},{"metric":{"job":"habit-service","method":"POST","status":"200","uri":"/api/habits"},"value":[1795367850,"0"]},{"metric":{"job":"habit-service","method":"POST","status":"200","uri":"/api/habits/{id}/toggle"},"value":[1795367850,"5649.8014455903785"]}]}}
+== live proof (after), DB time 2026-11-22 17:48:45 UTC
+   habitflow: habits=79 habit_completions=58 outbox_events=5948 outbox_unsent=0
+   insights:  processed_events=5953 daily_completion_counts=70
+   /habitflow-db started=2026-11-19T17:07:01.631843379Z image=sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21
+   /habitflow-insights-db started=2026-11-21T12:58:17.450662215Z image=sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21
+== done (the EXIT trap removes hf26-explain next)
+== removed hf26-explain
