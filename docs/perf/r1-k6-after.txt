@@ -1,0 +1,145 @@
+== HF-25 k6 run 20261122T182938Z (local 2026-11-22 12:29:38 CST)
+== vus=50 duration=2m  mix: 1 toggle + 1 list per iteration, 1 s think time
+== git: 779bdaeb38addbf343d2fb545bf98ff65a3cfd38 on HF-27-habits-user-id-index
+   git status:  M perf/sql/explain.sh
+   git status:  M services/habit-service/src/test/java/com/habitflow/habits/FlywayBaselineIT.java
+   git status: ?? docs/perf/r1-explain-after-raw.txt
+   git status: ?? docs/perf/r1-k6-after.txt
+   git status: ?? services/habit-service/src/main/resources/db/migration/V3__idx_habits_user_id.sql
+== host: MacBookPro17,1, Apple M1, 8 CPUs, 8 GiB RAM
+== docker: server 29.1.3, Docker Desktop, VM 8 CPUs, 4630360064 bytes memory
+== Docker Compose version v2.40.3-desktop.1
+== k6 image: grafana/k6:2.3.0@sha256:2dd4756ec6e14e62778916e1eb850108e4b499304c02df56760fa0bdb0fba0b8
+== k6 script: perf/k6/toggle.js
+== script hashes (shasum -a 256):
+   a68cab5ec0a14a9b1d65820a626a3d5f9af1635e85235cc784a86d98c0605d15  perf/k6/toggle.js
+   b45e52e4943e23e103b46e47ad6c063f02e6614710a7c33e47892287f7bfba66  perf/k6/run.sh
+== operator notes:
+   HF-27 after-run (habits_user_id_idx applied by Flyway V3 on the existing habitflow-db volume, rank 4, 2026-11-22T18:27:35Z).
+   Restart asymmetry vs HF-25: ONLY habit-service was rebuilt and restarted (docker compose up -d --build --no-deps habit-service,
+     container started 2026-11-22T18:27:30Z, image e80114da0d1e). auth-service and insights-service were NOT restarted: warm since
+     2026-11-22T17:07:45Z (HF-25 dry run + baseline run, HF-26 live reads). In HF-25 all three JVMs started cold.
+   Warm-up: 15 s dry run (50 VUs, scratch file, not committed) at 12:27:5x CST; it exited 99 (toggle p95 308.1ms, list p95 126.08ms,
+     0.00% failed, drained) about 10 s after the habit-service cold start. Then a ~60 s pause before this run.
+   Still stopped since HF-25 (2026-11-22 11:07 CST, docker stop only): the 12 supabase_*_pc-charting containers (0 running).
+     The supabase_*_ProviderConnect containers also exited (weeks). habitflow-grafana exited, as in HF-25.
+   Live habits before this run (read-only count): 129 (79 at the HF-26 live proof, plus 50 from the dry run's setup).
+   Header difference vs r1-k6-before.txt: this run.sh (b45e52e4...) prints "k6 script" and "script hashes" lines; the before-run
+     was produced by the a0fccfa-era run.sh (c56de66b... at a0fccfa), which did not. toggle.js is identical (a68cab5e... both).
+     run.sh changed only in the HF-25 follow-up (exit handling, OUT default, hashes, K6_SCRIPT), not the measurement.
+== compose services (container | image id | image built | container started):
+   habitflow-auth | sha256:5d30ed9f95c2e34d3e8bc609b9865245621cb2b37dc63df4b6424deb1fd794e5 | 2026-11-21T13:55:21.063886757Z | 2026-11-22T17:07:45.447070093Z
+   habitflow-habits | sha256:e80114da0d1ecc3aee6c34aec0ecf84528b3c9b985ac5ed9c6dd673821d1f9bc | 2026-11-22T18:27:25.38758168Z | 2026-11-22T18:27:30.557036959Z
+   habitflow-insights | sha256:cc0ffc2ae7865fea6872e6501f98875f915e4cd235790f1c8e03f34af7bd8fc5 | 2026-11-22T17:07:35.829460047Z | 2026-11-22T17:07:45.446836343Z
+   habitflow-db | sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21 | 2025-12-18T00:41:09.397180842Z | 2026-11-19T17:07:01.631843379Z
+   habitflow-insights-db | sha256:b3968e348b48f1198cc6de6611d055dbad91cd561b7990c406c3fc28d7095b21 | 2025-12-18T00:41:09.397180842Z | 2026-11-21T12:58:17.450662215Z
+   habitflow-kafka | sha256:fbbb6fa11b258a88b83f54d4f0bddfcffbf2279f99d66a843486e3da7bdfbf41 | 2023-08-18T21:15:01.866627499Z | 2026-11-20T17:00:30.960808758Z
+   habitflow-zookeeper | sha256:02f6c042bb9a7844382fc4cedc513a44585d8a5acae873fb9e510e3ca9dcabc6 | 2023-08-18T21:13:09.718337634Z | 2026-11-19T17:15:43.447701134Z
+   habitflow-prometheus | sha256:c5dd3503828713c4949ae1bccd1d8d69f382c33d441954674a6b78ebe69c3331 | 2023-09-06T11:06:42.426480223Z | 2026-11-21T13:00:34.877766709Z
+== all running containers (this VM):
+   habitflow-habits  habit-tracker-habit-service  Up 2 minutes
+   habitflow-auth  habit-tracker-auth-service  Up About an hour
+   habitflow-insights  habit-tracker-insights-service  Up About an hour (healthy)
+   habitflow-insights-db  postgres:15-alpine  Up 30 hours (healthy)
+   habitflow-prometheus  prom/prometheus:v2.47.0  Up 29 hours
+   habitflow-kafka  confluentinc/cp-kafka:7.5.0  Up 2 days (healthy)
+   habitflow-db  postgres:15-alpine  Up 3 days (healthy)
+   habitflow-zookeeper  confluentinc/cp-zookeeper:7.5.0  Up 3 days
+== docker stats before:
+   habitflow-habits cpu=3.06% mem=370.1MiB / 4.312GiB
+   habitflow-auth cpu=0.29% mem=360.1MiB / 4.312GiB
+   habitflow-insights cpu=0.52% mem=336.7MiB / 4.312GiB
+   habitflow-insights-db cpu=3.85% mem=40.74MiB / 4.312GiB
+   habitflow-prometheus cpu=0.00% mem=72.94MiB / 4.312GiB
+   habitflow-kafka cpu=1.52% mem=618.6MiB / 4.312GiB
+   habitflow-db cpu=3.55% mem=63.29MiB / 4.312GiB
+   habitflow-zookeeper cpu=0.19% mem=104.7MiB / 4.312GiB
+== network: habit-tracker_default
+== outbox before (db_time | unsent | oldest_unsent_age_s): 18:29:43 | 0 | 0
+== k6 start (lag samples: db_time | unsent | oldest_unsent_age_s)
+   lag 18:29:43 | 0 | 0
+   lag 18:29:48 | 2 | 0.26
+   lag 18:29:54 | 1 | 0.70
+   lag 18:29:59 | 1 | 0.48
+   lag 18:30:05 | 0 | 0
+   lag 18:30:10 | 0 | 0
+   lag 18:30:15 | 0 | 0
+   lag 18:30:21 | 0 | 0
+   lag 18:30:26 | 22 | 0.04
+   lag 18:30:31 | 50 | 0.12
+   lag 18:30:37 | 0 | 0
+   lag 18:30:42 | 0 | 0
+   lag 18:30:47 | 0 | 0
+   lag 18:30:53 | 0 | 0
+   lag 18:30:58 | 0 | 0
+   lag 18:31:03 | 0 | 0
+   lag 18:31:09 | 0 | 0
+   lag 18:31:14 | 30 | 0.40
+   lag 18:31:19 | 17 | 0.49
+   lag 18:31:24 | 19 | 0.41
+   lag 18:31:30 | 50 | 0.37
+   lag 18:31:35 | 50 | 0.42
+   lag 18:31:40 | 0 | 0
+   lag 18:31:46 | 0 | 0
+   lag 18:31:51 | 20 | 0.30
+
+
+  █ THRESHOLDS 
+
+    http_req_duration{endpoint:list}
+    ✓ 'p(95)<300' p(95)=62.95ms
+
+    http_req_duration{endpoint:toggle}
+    ✓ 'p(95)<300' p(95)=119.54ms
+
+    http_req_failed{phase:load}
+    ✓ 'rate<0.01' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 16950   130.264332/s
+    checks_succeeded...: 100.00% 16950 out of 16950
+    checks_failed......: 0.00%   0 out of 16950
+
+    ✓ toggle 200
+    ✓ list 200
+    ✓ list has own habit
+
+    HTTP
+    http_req_duration..............: avg=32.75ms min=940.5µs med=19.88ms p(90)=79.77ms p(95)=100.67ms p(99)=166.1ms  max=397.68ms
+      { endpoint:list }............: avg=19.54ms min=940.5µs med=10.47ms p(90)=46.76ms p(95)=62.95ms  p(99)=118.74ms max=317.62ms
+      { endpoint:toggle }..........: avg=45.17ms min=1.89ms  med=34.33ms p(90)=94.53ms p(95)=119.54ms p(99)=184.58ms max=397.68ms
+      { expected_response:true }...: avg=32.75ms min=940.5µs med=19.88ms p(90)=79.77ms p(95)=100.67ms p(99)=166.1ms  max=397.68ms
+    http_req_failed................: 0.00%  0 out of 11450
+      { phase:load }...............: 0.00%  0 out of 11300
+    http_reqs......................: 11450  87.99567/s
+
+    EXECUTION
+    iteration_duration.............: avg=1.06s   min=1s      med=1.05s   p(90)=1.12s   p(95)=1.16s    p(99)=1.28s    max=1.41s   
+    iterations.....................: 5650   43.421444/s
+    vus............................: 50     min=0          max=50
+    vus_max........................: 50     min=50         max=50
+
+    NETWORK
+    data_received..................: 4.8 MB 37 kB/s
+    data_sent......................: 3.6 MB 27 kB/s
+
+
+
+== k6 exit code: 0 (0 = all thresholds passed, 99 = a threshold missed, other = error)
+   drain 18:31:55 | 0 | 0
+== outbox drained: yes (0 unsent)
+== this run's outbox rows, created after 2026-11-22 18:29:43.488745+00 (DB time, sent_at - created_at):
+   rows | unsent | p50_ms | p95_ms | max_ms
+   5700 | 0 | 163 | 526 | 773
+== docker stats after:
+   habitflow-habits cpu=1.85% mem=387MiB / 4.312GiB
+   habitflow-auth cpu=0.45% mem=364.4MiB / 4.312GiB
+   habitflow-insights cpu=1.41% mem=337.7MiB / 4.312GiB
+   habitflow-insights-db cpu=0.00% mem=41.7MiB / 4.312GiB
+   habitflow-prometheus cpu=6.46% mem=73.23MiB / 4.312GiB
+   habitflow-kafka cpu=2.22% mem=620.5MiB / 4.312GiB
+   habitflow-db cpu=0.28% mem=68.44MiB / 4.312GiB
+   habitflow-zookeeper cpu=0.29% mem=104.7MiB / 4.312GiB
+== script exit code: 0

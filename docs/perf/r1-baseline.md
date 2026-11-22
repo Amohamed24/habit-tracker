@@ -43,6 +43,8 @@ Query plans for the four R1 hot queries at realistic volume, the HF-25 k6 number
 - **Schema:** the real migration files, applied with `psql -f` in version order:
   - habit-service `V1__baseline.sql`, `V2__outbox.sql`
   - insights-service `V1__projection.sql`
+  - HF-27's after-run ([`r1-explain-after-raw.txt`](r1-explain-after-raw.txt)) also applies habit-service
+    `V3__idx_habits_user_id.sql`, right after V2. Everything else in the script is unchanged (§6).
 
   There is no Flyway history table; the DDL is the same. The resulting index list in the raw file matches
   the live DBs, except that the unique index on `habit_completions (habit_id, completion_date)` has a
@@ -261,7 +263,7 @@ change's size and risk. The evidence column cites only numbers above.
 |---|---|---|---|---|
 | 1 | **Validate the JWT locally in habit-service** instead of a synchronous `GET /api/auth/validate` per request | Prometheus: auth's own server-side mean is 0.00439 s per call, on every list (mean 0.01730 s) and every toggle (mean 0.03378 s). 11,278 calls in the window. | Largest measured cost on both k6 paths, and independent of data volume. It also removes auth-service as a runtime dependency of every habit request. | **New R1b ticket.** It changes the trust model (key distribution, revocation, expiry). |
 | 2 | **Remove the list N+1:** fetch the user's completed-today habit ids in one query instead of one `exists` per habit | Code: 1 + N statements per list. Q4: each probe is already 0.022 ms in the DB, so the cost is the per-statement round trips. | Grows with habits per user. In HF-25's shape (1 habit per user) a list call is 2 statements, so **k6 as written can barely show it**. | **New R1b ticket.** |
-| 3 | **`CREATE INDEX IF NOT EXISTS ... ON habits (user_id)`** (`V3__idx_habits_user_id.sql`) | Q3: Seq Scan, 9995 rows removed for 5, 133 buffers (the whole heap), 0.374 ms at 10,000 habits | Small per call today. It's the only one of the four plans whose cost grows with *total* table size, so it's the scaling fix. **On the live volume (79 habits) a k6 before/after can't show it.** | **HF-27 (R1-17c).** See the note below. |
+| 3 | **`CREATE INDEX IF NOT EXISTS ... ON habits (user_id)`** (`V3__idx_habits_user_id.sql`) | Q3: Seq Scan, 9995 rows removed for 5, 133 buffers (the whole heap), 0.374 ms at 10,000 habits | Small per call today. It's the only one of the four plans whose cost grows with *total* table size, so it's the scaling fix. **On the live volume (79 habits) a k6 before/after can't show it.** | **HF-27 (R1-17c), applied: see §6.** See the note below. |
 | 4 | **Partial index on `outbox_events (created_at) WHERE sent_at IS NULL`**, so the claim can read rows in order and stop at 50 | Q1: all 1000 due rows fetched and quicksorted (439kB) to keep 50, 1.640 ms | Off the request path; affects outbox lag only. HF-25's outbox p95 was 542 ms with the claim at about 1.6 ms. Matters in a large backlog (e.g. after a broker outage). | New ticket, low priority |
 | 5 | **Retention for sent `outbox_events` and old `processed_events`** | Seeded outbox heap is 46 MB for 101,000 rows; Q1 is unaffected (partial index) | Storage and vacuum cost only, with no effect on these four plans | New ticket, later |
 | — | Projection insert / upsert | Q2: 0.056 + 0.028 ms, PK arbiters | None needed | — |
@@ -306,9 +308,90 @@ published, as its third criterion requires, even if the change is small or zero.
 - **Prometheus gives means, not percentiles.**
 - **Toggle's `findByIdAndUserId`** (a PK lookup) was not planned. It is not one of the four Jira queries.
 
+## 6. HF-27 before/after (`habits(user_id)` index)
+HF-27 applies fix #3 as `V3__idx_habits_user_id.sql`:
+`CREATE INDEX IF NOT EXISTS habits_user_id_idx ON habits (user_id)`.
+
+- **Raw evidence:**
+  - Before: [`r1-explain-raw.txt`](r1-explain-raw.txt) and [`r1-k6-before.txt`](r1-k6-before.txt).
+  - After: [`r1-explain-after-raw.txt`](r1-explain-after-raw.txt) and [`r1-k6-after.txt`](r1-k6-after.txt) (run `20261122T182938Z`).
+  - Each after-file comes from one real run, committed as written.
+- **Number rule:** as above, every number is quoted from those four files.
+
+### Q3 plan, same seed
+The after-run used the same `explain.sh` with one added line (V3, after V2), the same PG image and the same seed.
+The seeded `habits` heap is identical in both files: `rows=10000 relpages=133 heap=1064 kB`. Only `indexes=`
+changed, from 240 kB to 432 kB. Run 3 of 3:
+
+Before:
+```
+ Seq Scan on habits h1_0  (cost=0.00..258.00 rows=5 width=72) (actual time=0.042..0.372 rows=5 loops=1)
+   Filter: (user_id = '1000'::bigint)
+   Rows Removed by Filter: 9995
+   Buffers: shared hit=133
+ Planning Time: 0.018 ms
+ Execution Time: 0.374 ms
+```
+After:
+```
+ Bitmap Heap Scan on habits h1_0  (cost=4.32..21.48 rows=5 width=72) (actual time=0.008..0.013 rows=5 loops=1)
+   Recheck Cond: (user_id = '1000'::bigint)
+   Heap Blocks: exact=5
+   Buffers: shared hit=7
+   ->  Bitmap Index Scan on habits_user_id_idx  (cost=0.00..4.32 rows=5 width=0) (actual time=0.005..0.005 rows=5 loops=1)
+         Index Cond: (user_id = '1000'::bigint)
+         Buffers: shared hit=2
+ Planning Time: 0.020 ms
+ Execution Time: 0.041 ms
+```
+- **The plan is a Bitmap Heap Scan driven by a Bitmap Index Scan**, not a plain Index Scan. User 1000's 5 rows
+  sit on 5 different heap pages (`Heap Blocks: exact=5`; the seed interleaves users), so the planner batches the page reads.
+  The acceptance criterion's "sequential scan → index scan" is an example. The criterion is that the plan changes, and it does.
+- **Run 1 (cold):** 0.971 ms before, 0.065 ms after.
+
+### k6, live stack
+50 VUs for 2 minutes, the same `toggle.js` (sha256 `a68cab5e…5d15` in both runs) and the same pinned image.
+
+| Metric | Before (HF-25) | After (HF-27) |
+|---|---|---|
+| Q3 top node (run 3) | Seq Scan on habits | Bitmap Heap Scan on habits (Bitmap Index Scan on `habits_user_id_idx`) |
+| Q3 Rows Removed by Filter | 9995 | — (no filter; `Recheck Cond`) |
+| Q3 Buffers | shared hit=133 | shared hit=7 (index: shared hit=2) |
+| Q3 Execution Time | 0.374 ms | 0.041 ms |
+| k6 list `p(95)` | 74.84ms | 62.95ms |
+| k6 toggle `p(95)` | 132.08ms | 119.54ms |
+| `http_req_failed{phase:load}` | 0.00% (0 out of 11308) | 0.00% (0 out of 11300) |
+| Thresholds / k6 exit | all ✓ / 0 | all ✓ / 0 |
+| Iterations | 5654 | 5650 |
+| Outbox `sent_at - created_at` p50/p95/max (this run's rows) | 187/542/668 ms (5704 rows) | 163/526/773 ms (5700 rows) |
+| Outbox lag samples, max oldest unsent age (25 samples) | 0.53 s | 0.70 s |
+| Drained | yes (0 unsent) | yes (0 unsent) |
+
+### Conclusion
+- **On the 10,000-habit seed, the index changes Q3 as expected.** The Seq Scan reading the whole heap (133 buffers,
+  9995 rows filtered out) becomes a bitmap index scan touching 7 buffers. Execution time drops from 0.374 ms to 0.041 ms.
+  This is the result HF-27 can prove.
+- **The k6 differences can't be attributed to the index.**
+  - The live DB held 129 habits before the after-run (79, plus 50 from the dry run's setup; operator notes in `r1-k6-after.txt`). At that size Q3 was a fraction of a millisecond either way.
+  - List p95 was 11.89 ms lower and toggle p95 12.54 ms lower, but toggle doesn't run Q3 at all (it uses a PK lookup), and it moved by about the same amount.
+  - Outbox max got worse (668 → 773 ms) while p50 and p95 improved.
+  - With one run each, there's no variance estimate, and the runs also differ in JVM warmth (below). These differences are read as noise.
+- **Known limitations of this comparison:**
+  - **Warmth differed.** Only habit-service was rebuilt and restarted for the after-run (`--no-deps`). auth-service and
+    insights-service had been warm since 17:07:45Z. In HF-25 all three JVMs started cold. The 15 s warm-up dry run
+    exited 99 (toggle p95 308.1ms) about 10 s after the habit-service cold start. It's in the operator notes and wasn't committed.
+  - **The run.sh headers differ.** The after-run's `run.sh` (sha256 `b45e52e4…ba66`) prints `k6 script` and `script hashes`
+    lines, and the before-run's didn't. That file was produced by the `a0fccfa` version (`c56de66b…8965`). The diff between
+    them is the HF-25 follow-up only: exit handling, the OUT default plus the overwrite refusal, the hash lines, and `K6_SCRIPT`.
+    The k6 image, VUs, duration, environment, lag SQL and drain check are identical.
+  - **The index is not built `CONCURRENTLY`.** Flyway runs V3 in a transaction, so the build takes a `SHARE` lock that
+    blocks writes to `habits` for as long as it runs. On 79 rows that was instant: Flyway logged 00:00.077s for
+    the migration. A large table would need a separate non-transactional `CONCURRENTLY` migration plus a check for invalid indexes.
+
 ## Reproduce
 ```bash
 ./perf/sql/explain.sh          # from the repo root; needs the compose stack up for the live proof + Prometheus
+OUT=docs/perf/r1-explain-after-raw.txt ./perf/sql/explain.sh   # HF-27 after-run (V3 applied); explain.sh truncates OUT, so pick a new name
 ```
 Only the container `hf26-explain` and its anonymous data volume are created and removed (`docker rm -fv`).
 The live DBs are only read.
