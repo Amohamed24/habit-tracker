@@ -327,15 +327,22 @@ On macOS, if `docker` isn't found in your shell, see [Troubleshooting](#docker-c
      -d '{"email": "demo@example.com", "password": "password123"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
    HABIT=$(curl -fsS -X POST localhost:8080/api/habits -H "Authorization: Bearer $TOKEN" \
      -H 'Content-Type: application/json' -d '{"name": "Exercise", "frequency": "DAILY"}' | sed -E 's/.*"id":([0-9]+).*/\1/')
-   curl -fsS -X POST localhost:8080/api/habits/$HABIT/toggle -H "Authorization: Bearer $TOKEN"
-   # A second later, the completion is in the projection:
+   curl -fsS -X POST localhost:8080/api/habits/$HABIT/toggle -H "Authorization: Bearer $TOKEN"; echo
+   sleep 2   # the outbox publisher polls every 500 ms; give the event time to reach insights-service
    docker compose exec -T insights-db psql -U postgres -d insights -c 'SELECT * FROM daily_completion_counts'
    ```
+   The projection shows one row with `completed_count` 1.
 
 5. **Stop**
    ```bash
-   docker compose down     # removes the containers, keeps the data
+   docker compose stop     # stops the containers; everything is kept, including Kafka's topics
+   docker compose down     # removes the containers; keeps both databases, but not Kafka's topics
    ```
+   Postgres data is in the named volumes `postgres_data` and `insights_data`, which survive `down`. Kafka and ZooKeeper
+   keep their data in anonymous volumes declared by their images (compose gives them no named volume,
+   [`docker-compose.yml`](docker-compose.yml)), so after a `down` the broker starts empty: topic history, DLT records and
+   consumer offsets are gone from the running stack (the old anonymous volumes are left behind, detached). Events
+   already applied stay in the projection, and unsent outbox rows are still published.
    **Don't add `-v`** unless you mean to delete both databases: it removes `postgres_data` and `insights_data`.
 
 Container names are fixed (`habitflow-db`, `habitflow-kafka`, ...), so only one copy of the stack can run on a machine.
@@ -696,6 +703,8 @@ See [`docs/runbooks/flyway-baseline-rollback.md`](docs/runbooks/flyway-baseline-
 - **The proofs' limits:** `docker pause` isn't a network partition ([`BrokerOutageProofIT`](services/habit-service/src/test/java/com/habitflow/habits/BrokerOutageProofIT.java));
   one consumer instance and no mid-stream rebalance ([`DuplicateDeliveryProofIT`](services/insights-service/src/test/java/com/habitflow/insights/listener/DuplicateDeliveryProofIT.java)).
 - **Perf numbers come from one laptop, one run each** ([`r1-baseline.md`](docs/perf/r1-baseline.md) §5).
+- **Kafka has no named volume** in compose, so `docker compose down` starts the broker empty
+  ([Stop](#running-locally-with-docker-compose)).
 - **The architecture image is out of date** (no insights-service, no outbox); the mermaid diagrams are current.
 
 ---
