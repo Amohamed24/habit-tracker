@@ -259,20 +259,32 @@ change's size and risk. The evidence column cites only numbers above.
 
 | Rank | Fix | Evidence | Expected impact | Ticket |
 |---|---|---|---|---|
-| 1 | **Validate the JWT locally in habit-service** instead of a synchronous `GET /api/auth/validate` per request | Prometheus: auth's own server-side mean is 0.00439 s per call, on every list (mean 0.01730 s) and every toggle (mean 0.03378 s). 11,278 calls in the window. | Largest measured cost on both k6 paths, and independent of data volume. It also removes auth-service as a runtime dependency of every habit request. | **New ticket (R1b).** It changes the trust model (key distribution, revocation, expiry), so it does not fit R1-17c's "one fix" perf scope. |
-| 2 | **Remove the list N+1:** fetch the user's completed-today habit ids in one query instead of one `exists` per habit | Code: 1 + N statements per list. Q4: each probe is already 0.022 ms in the DB, so the cost is the per-statement round trips. | Grows with habits per user. In HF-25's shape (1 habit per user) a list call is 2 statements, so **k6 as written can barely show it**. | New ticket, or HF-27 if you choose it. |
-| 3 | **`CREATE INDEX IF NOT EXISTS ... ON habits (user_id)`** (`V3__idx_habits_user_id.sql`) | Q3: Seq Scan, 9995 rows removed for 5, 133 buffers (the whole heap), 0.374 ms at 10,000 habits | Small per call today. It's the only one of the four plans whose cost grows with *total* table size, so it's the scaling fix. **On the live volume (79 habits) a k6 before/after can't show it.** | **HF-27 (R1-17c), recommended:** it's the top-ranked fix that fits R1-17c's form (one migration, provable Seq Scan → index plan change) |
+| 1 | **Validate the JWT locally in habit-service** instead of a synchronous `GET /api/auth/validate` per request | Prometheus: auth's own server-side mean is 0.00439 s per call, on every list (mean 0.01730 s) and every toggle (mean 0.03378 s). 11,278 calls in the window. | Largest measured cost on both k6 paths, and independent of data volume. It also removes auth-service as a runtime dependency of every habit request. | **New R1b ticket.** It changes the trust model (key distribution, revocation, expiry). |
+| 2 | **Remove the list N+1:** fetch the user's completed-today habit ids in one query instead of one `exists` per habit | Code: 1 + N statements per list. Q4: each probe is already 0.022 ms in the DB, so the cost is the per-statement round trips. | Grows with habits per user. In HF-25's shape (1 habit per user) a list call is 2 statements, so **k6 as written can barely show it**. | **New R1b ticket.** |
+| 3 | **`CREATE INDEX IF NOT EXISTS ... ON habits (user_id)`** (`V3__idx_habits_user_id.sql`) | Q3: Seq Scan, 9995 rows removed for 5, 133 buffers (the whole heap), 0.374 ms at 10,000 habits | Small per call today. It's the only one of the four plans whose cost grows with *total* table size, so it's the scaling fix. **On the live volume (79 habits) a k6 before/after can't show it.** | **HF-27 (R1-17c).** See the note below. |
 | 4 | **Partial index on `outbox_events (created_at) WHERE sent_at IS NULL`**, so the claim can read rows in order and stop at 50 | Q1: all 1000 due rows fetched and quicksorted (439kB) to keep 50, 1.640 ms | Off the request path; affects outbox lag only. HF-25's outbox p95 was 542 ms with the claim at about 1.6 ms. Matters in a large backlog (e.g. after a broker outage). | New ticket, low priority |
 | 5 | **Retention for sent `outbox_events` and old `processed_events`** | Seeded outbox heap is 46 MB for 101,000 rows; Q1 is unaffected (partial index) | Storage and vacuum cost only, with no effect on these four plans | New ticket, later |
 | — | Projection insert / upsert | Q2: 0.056 + 0.028 ms, PK arbiters | None needed | — |
 
-**Note for HF-27.** R1-17c says it applies "whichever fix R1-17b ranks first".
-- Rank 1 here is the auth hop. It is a design change, not a one-migration perf fix, so this report
-  recommends **HF-27 apply rank 3** (the `habits(user_id)` index). Rank 1 should get its own ticket. That
-  choice is the ticket owner's to confirm.
-- Either way, the HF-25 k6 shape is a poor detector for rank 2 and rank 3. It has 1 habit per user
-  (`perf/k6/toggle.js:54`), and the live table held 79 habits at the HF-26 live proof. HF-27 should decide its k6 volume deliberately and say so, rather than expect a visible p95
-  change.
+**Note for HF-27: it applies #3, the `habits(user_id)` index.** The ranking above stays in impact order.
+HF-27 takes #3 rather than #1 because HF-27's acceptance criteria are written for a migration and a
+plan change:
+- HF-27 AC: "The migration applies on fresh and existing volumes."
+- HF-27 AC: "The plan changes (e.g. sequential scan → index scan)."
+- HF-27 AC: "The k6 before/after table is published, even if the change is small."
+
+#3 meets all three: `V3__idx_habits_user_id.sql` is a Flyway migration, and Q3 is the Seq Scan that should
+become an index scan. #1 (local JWT validation) and #2 (the list N+1) are code changes with no migration and
+no plan to change, so HF-27's first two criteria can't apply to them. **#1 and #2 become new R1b tickets.**
+This departs from HF-27's implementation note ("If R1-17b ranks something else first, this ticket does that
+instead"), and the acceptance criteria above are the reason.
+
+**At the live volume, k6 is unlikely to show a difference.** The live table held 79 habits at the HF-26 live
+proof, and HF-25's k6 uses 1 habit per user (`perf/k6/toggle.js:54`). At 10,000 seeded habits, Q3 costs
+0.374 ms in the DB, against a list p95 of 74.84 ms. So **HF-27's provable result is the plan change on the
+seeded data** (Q3 rerun on the same seed with V3 applied; `explain.sh` applies V1/V2 by name today, so
+HF-27 has to add V3 to it). The k6 before/after table is still
+published, as its third criterion requires, even if the change is small or zero.
 
 ## 5. Known limitations
 - **Synthetic, uniform data:** 5 habits per user, a 50% completion rate, all 1,000 pending outbox rows due,
