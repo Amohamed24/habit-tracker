@@ -1,7 +1,7 @@
 # R1 performance baseline (HF-26 / R1-17b)
 
 Query plans for the four R1 hot queries at realistic volume, the HF-25 k6 numbers, and a ranked list of fixes.
-**No fix is applied here** (that is R1-17c / HF-27).
+**No fix is applied here** (that is R1-17c / HF-27). (HF-26; HF-27's fix and results are in §6)
 
 - Raw evidence: [`r1-explain-raw.txt`](r1-explain-raw.txt) (one real run of `./perf/sql/explain.sh`,
   committed as written) and [`r1-k6-before.txt`](r1-k6-before.txt) (HF-25).
@@ -379,10 +379,14 @@ After:
 - **Known limitations of this comparison:**
   - **Warmth differed.** Only habit-service was rebuilt and restarted for the after-run (`--no-deps`). auth-service and
     insights-service had been warm since 17:07:45Z. In HF-25 all three JVMs started cold. The 15 s warm-up dry run
-    exited 99 (toggle p95 308.1ms) about 10 s after the habit-service cold start. It's in the operator notes and wasn't committed.
+    exited 99 (toggle p95 308.1ms). It wasn't committed. The dry run's `run.sh` started at 18:27:49Z (its run id): about
+    19 s after the habit-service container start (18:27:30Z) and about 11 s after the app's
+    `Started HabitServiceApplication` log line (18:27:37.886Z). The "about 10 s" in `r1-k6-after.txt`'s operator notes is
+    measured from that log line, not from the container start.
   - **The run.sh headers differ.** The after-run's `run.sh` (sha256 `b45e52e4…ba66`) prints `k6 script` and `script hashes`
-    lines, and the before-run's didn't. That file was produced by the `a0fccfa` version (`c56de66b…8965`). The diff between
-    them is the HF-25 follow-up only: exit handling, the OUT default plus the overwrite refusal, the hash lines, and `K6_SCRIPT`.
+    lines, and the before-run's didn't. The before-file's header is consistent with the `a0fccfa` version (`c56de66b…8965`);
+    `a0fccfa` was committed after the before-run, so this is not proven. The diff between `a0fccfa` and the after-run's
+    `run.sh` is the HF-25 follow-up only: exit handling, the OUT default plus the overwrite refusal, the hash lines, and `K6_SCRIPT`.
     The k6 image, VUs, duration, environment, lag SQL and drain check are identical.
   - **The index is not built `CONCURRENTLY`.** Flyway runs V3 in a transaction, so the build takes a `SHARE` lock that
     blocks writes to `habits` for as long as it runs. On 79 rows that was instant: Flyway logged 00:00.077s for
