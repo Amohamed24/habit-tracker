@@ -22,7 +22,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Proves the V1 baseline (and that V2 applies after it) in every starting state the habitflow database can be in.
+ * Proves the V1 baseline (and that V2 and V3 apply after it) in every starting state the habitflow database can be in.
  *
  * <p>Flyway runs at startup, so each scenario gets its own database, sets up its starting
  * state with plain JDBC, and then boots the real {@link HabitServiceApplication} against it.
@@ -72,7 +72,8 @@ class FlywayBaselineIT {
 
         boot(db);
 
-        assertThat(history(db)).containsExactly("1|SQL|true", "2|SQL|true");
+        assertUserIdIndex(db);
+        assertThat(history(db)).containsExactly("1|SQL|true", "2|SQL|true", "3|SQL|true");
         assertHabitTablesWithOneUniqueAndOneFk(db, null, null);
     }
 
@@ -84,7 +85,8 @@ class FlywayBaselineIT {
 
         boot(db);
 
-        assertThat(history(db)).containsExactly("0|BASELINE|true", "1|SQL|true", "2|SQL|true");
+        assertUserIdIndex(db);
+        assertThat(history(db)).containsExactly("0|BASELINE|true", "1|SQL|true", "2|SQL|true", "3|SQL|true");
         assertHabitTablesWithOneUniqueAndOneFk(db, null, null);
         assertThat(usersSnapshot(db)).isEqualTo(usersBefore);
     }
@@ -98,7 +100,8 @@ class FlywayBaselineIT {
 
         boot(db);
 
-        assertThat(history(db)).containsExactly("0|BASELINE|true", "1|SQL|true", "2|SQL|true");
+        assertUserIdIndex(db);
+        assertThat(history(db)).containsExactly("0|BASELINE|true", "1|SQL|true", "2|SQL|true", "3|SQL|true");
         assertThat(query(db, "SELECT count(*) FROM habits")).containsExactly("2");
         assertThat(query(db, "SELECT count(*) FROM habit_completions")).containsExactly("3");
         assertHabitTablesWithOneUniqueAndOneFk(db, "uk1jmmm9bn1u8tqv76tvux1htde", "fkdt8vmlabmctme9yn5fbnp9ipf");
@@ -185,6 +188,15 @@ class FlywayBaselineIT {
                 .containsExactly("2");
         if (uniqueName != null) assertThat(unique).containsExactly(uniqueName);
         if (fkName != null) assertThat(fk).containsExactly(fkName);
+    }
+
+    // V3 (R1-17c): the habits(user_id) index for HabitRepository.findByUserId. Asserted before the history
+    // so that a missing V3 fails on this line, not on the history line.
+    private static void assertUserIdIndex(String db) throws SQLException {
+        assertThat(query(db, "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'habits'"
+                + " AND indexname = 'habits_user_id_idx'"))
+                .as("habits_user_id_idx in %s", db)
+                .containsExactly("CREATE INDEX habits_user_id_idx ON public.habits USING btree (user_id)");
     }
 
     private static List<String> history(String db) throws SQLException {

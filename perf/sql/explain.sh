@@ -81,6 +81,7 @@ log "== schema: real migration files via psql -f, in version order (no Flyway hi
 run tpsql -q -c 'CREATE DATABASE habitflow' -c 'CREATE DATABASE insights' >/dev/null
 run tpsql -q -d habitflow -f /mig/habit/V1__baseline.sql >/dev/null
 run tpsql -q -d habitflow -f /mig/habit/V2__outbox.sql >/dev/null
+run tpsql -q -d habitflow -f /mig/habit/V3__idx_habits_user_id.sql >/dev/null
 run tpsql -q -d insights -f /mig/insights/V1__projection.sql >/dev/null
 run tpsql -At -d habitflow -c "SELECT '   ' || tablename || ': ' || indexdef FROM pg_indexes WHERE schemaname = 'public' ORDER BY tablename, indexname" >/dev/null
 run tpsql -At -d insights -c "SELECT '   ' || tablename || ': ' || indexdef FROM pg_indexes WHERE schemaname = 'public' ORDER BY tablename, indexname" >/dev/null
