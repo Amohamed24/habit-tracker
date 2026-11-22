@@ -25,6 +25,9 @@ public class ProjectionService {
     /** Default consumer name; HF-18's Kafka group id. */
     public static final String CONSUMER = "insights-service";
 
+    /** The only envelope version this consumer understands (docs/events/*.v1.json). */
+    static final int SUPPORTED_EVENT_VERSION = 1;
+
     private static final String INSERT_PROCESSED = """
             INSERT INTO processed_events (consumer, event_id) VALUES (?, ?)
             ON CONFLICT DO NOTHING""";
@@ -49,6 +52,7 @@ public class ProjectionService {
 
     /**
      * @throws IllegalArgumentException if {@code consumer}, {@code event_id} or {@code event_type} is null/blank,
+     *                                  {@code event_version} is not {@value #SUPPORTED_EVENT_VERSION},
      *                                  or a counted event lacks an integral payload {@code userId} or a valid
      *                                  {@code completionDate} (all checked before any write)
      */
@@ -59,6 +63,11 @@ public class ProjectionService {
         }
         if (event == null || event.eventId() == null) {
             throw new IllegalArgumentException("event_id is null");
+        }
+        // HF-20: not retryable, so it goes straight to the DLT. A missing event_version binds as 0 and lands here too.
+        if (event.eventVersion() != SUPPORTED_EVENT_VERSION) {
+            throw new IllegalArgumentException(
+                    "event " + event.eventId() + ": unsupported event_version " + event.eventVersion());
         }
         if (event.eventType() == null || event.eventType().isBlank()) {
             throw new IllegalArgumentException("event " + event.eventId() + ": event_type is null or blank");

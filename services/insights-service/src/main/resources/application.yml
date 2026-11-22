@@ -46,8 +46,9 @@ spring:
     # listener.ack-mode is left at Spring Kafka's default, BATCH: a poll's offsets are committed only after
     # the listener has returned for every record in it, i.e. after each ProjectionService.apply transaction
     # committed. A record whose apply throws is sought back, not committed, until the error handler's retries
-    # are exhausted (default backoff, 10 attempts; tuning is HF-20). It is then published to the DLT, and its
-    # offset is committed only after that publish succeeded (HF-19).
+    # are exhausted (HF-20: 4 attempts, 1 s / 2 s / 4 s apart; IllegalArgumentException, JsonProcessingException
+    # and DeserializationException are not retried). It is then published to the DLT, and its offset is
+    # committed only after that publish succeeded (HF-19).
 
 server:
   port: 8082

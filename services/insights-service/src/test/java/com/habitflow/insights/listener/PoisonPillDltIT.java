@@ -213,8 +213,9 @@ class PoisonPillDltIT extends IntegrationTestBase {
     }
 
     /**
-     * Behaviour change from HF-19 (not a Jira AC): an apply failure is dead-lettered after the default backoff
-     * (10 attempts; tuning and classification are HF-20), and the partition moves on.
+     * Behaviour change from HF-19 (not a Jira AC): a retryable apply failure is dead-lettered after the bounded
+     * exponential retry (4 attempts, HF-20; attempt counts and timing are in RetryClassificationIT), and the
+     * partition moves on.
      *
      * <p>Unlike a deserialization failure, the DLT value is <b>not</b> the original bytes: the record was already
      * deserialized, so the recoverer publishes the {@link EventEnvelope} re-serialized as JSON. This test sends a
@@ -222,7 +223,7 @@ class PoisonPillDltIT extends IntegrationTestBase {
      * has lost the unknown field, and still carries the same envelope fields. The key bytes are unchanged.
      */
     @Test
-    void applyFailure_afterDefaultRetries_landsOnDlt() throws Exception {
+    void applyFailure_afterBoundedRetries_landsOnDlt() throws Exception {
         long user = NEXT_USER.incrementAndGet();
         UUID failing = UUID.randomUUID();
         UUID next = UUID.randomUUID();

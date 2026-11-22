@@ -1,5 +1,6 @@
 package com.habitflow.insights.config;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.habitflow.insights.event.EventEnvelope;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -16,7 +17,9 @@ import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
 import org.springframework.kafka.support.serializer.DelegatingByTypeSerializer;
+import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.kafka.support.serializer.JsonSerializer;
 
 import java.util.LinkedHashMap;
@@ -30,8 +33,9 @@ import java.util.Map;
  *   <li><b>Deserialization failures</b> (malformed JSON): {@code ErrorHandlingDeserializer} hands the record to the
  *       error handler; {@code DeserializationException} is not retryable in {@link DefaultErrorHandler}, so it is
  *       dead-lettered on the first attempt with the <b>original key and value bytes</b>.</li>
- *   <li><b>Apply failures</b> (the listener throws): dead-lettered after the default backoff is exhausted
- *       (10 attempts; tuning and classification are HF-20). The value is the deserialized {@link EventEnvelope}
+ *   <li><b>Apply failures</b> (the listener throws): an {@link IllegalArgumentException} is dead-lettered on the
+ *       first attempt; anything else after bounded exponential retry (4 attempts, HF-20; see
+ *       {@link #kafkaErrorHandler}). The value is the deserialized {@link EventEnvelope}
  *       <b>re-serialized as JSON</b>, not the original bytes.</li>
  * </ul>
  * The recoverer waits for the DLT send and throws if it fails; the error handler then seeks back instead of
@@ -81,11 +85,24 @@ public class DeadLetterConfig {
     }
 
     /**
-     * Picked up by Boot's listener container factory (a single {@code CommonErrorHandler} bean). Default backoff
-     * on purpose: bounded exponential retry is HF-20.
+     * Picked up by Boot's listener container factory (a single {@code CommonErrorHandler} bean). R1-12b / HF-20
+     * (fixes L6): a retryable failure gets 4 attempts, 1 s, 2 s and 4 s apart (the 10 s cap is never reached),
+     * then goes to the DLT; at most about 7 s of blocking per bad record, holding its partition.
+     *
+     * <p>Not retryable, dead-lettered on the first attempt: {@link DeserializationException} (already in Spring
+     * Kafka's defaults), {@link JsonProcessingException} and {@link IllegalArgumentException} (every
+     * {@code ProjectionService} validation, including an unsupported {@code event_version}). The classifier
+     * traverses causes, so these match when wrapped in {@code ListenerExecutionFailedException}.
      */
     @Bean
     public DefaultErrorHandler kafkaErrorHandler(DeadLetterPublishingRecoverer deadLetterPublishingRecoverer) {
-        return new DefaultErrorHandler(deadLetterPublishingRecoverer);
+        ExponentialBackOffWithMaxRetries backOff = new ExponentialBackOffWithMaxRetries(3);
+        backOff.setInitialInterval(1_000L);
+        backOff.setMultiplier(2.0);
+        backOff.setMaxInterval(10_000L);
+        DefaultErrorHandler handler = new DefaultErrorHandler(deadLetterPublishingRecoverer, backOff);
+        handler.addNotRetryableExceptions(DeserializationException.class, JsonProcessingException.class,
+                IllegalArgumentException.class);
+        return handler;
     }
 }
